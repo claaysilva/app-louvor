@@ -26,6 +26,8 @@ Aplicativo web para ministerio de louvor em modo local (autenticacao e dados no 
 - Exportacao de setlist para impressao/PDF
 - Historico de acoes (auditoria local)
 - PWA com cache offline e botao de instalacao
+- Backup local em JSON (exportar/importar)
+- Reset completo dos dados locais (com confirmacao)
 
 ## Execucao local
 

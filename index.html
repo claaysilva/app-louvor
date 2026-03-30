@@ -70,6 +70,7 @@
       </div>
       <div class="header-user">
         <button id="btn-install" class="btn-ghost hidden" title="Instalar app">Instalar</button>
+        <button class="btn-ghost" onclick="openDataToolsModal()" title="Backup e restauracao">Dados</button>
         <button id="btn-admin-create" class="btn-ghost hidden" onclick="openAdminCreateUserModal()" title="Cadastrar usuario">Novo usuario</button>
         <div class="user-avatar" id="user-avatar">?</div>
         <button class="btn-icon" onclick="doLogout()" title="Sair">Sair</button>
@@ -324,6 +325,26 @@
         <button class="btn-cancel" onclick="closeSetlistDetailModal()">Fechar</button>
       </div>
       <div id="setlist-song-list"></div>
+    </div>
+  </div>
+
+  <div id="modal-data-tools" class="modal-overlay">
+    <div class="modal">
+      <div class="modal-handle"></div>
+      <h3 class="modal-title">Dados locais</h3>
+      <p class="muted">Gerencie backup e restauracao do localStorage deste app.</p>
+
+      <div class="modal-actions">
+        <button class="btn-ghost" onclick="exportBackupJson()">Exportar backup</button>
+        <button class="btn-ghost" onclick="triggerImportBackup()">Importar backup</button>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn-cancel" onclick="closeDataToolsModal()">Fechar</button>
+        <button class="btn-save" onclick="clearAllAppData()">Resetar app</button>
+      </div>
+
+      <input id="backup-file-input" type="file" accept="application/json" class="hidden" />
     </div>
   </div>
 

@@ -452,6 +452,7 @@ select:focus-visible {
   display: flex;
   gap: 8px;
   margin-top: 10px;
+  flex-wrap: wrap;
 }
 
 .setlist-song-item {
@@ -603,5 +604,32 @@ select:focus-visible {
 @keyframes pulse {
   to {
     background-position-x: -200%;
+  }
+}
+
+@media (max-width: 380px) {
+  .header-user {
+    gap: 4px;
+  }
+
+  .btn-ghost,
+  .btn-icon,
+  .btn-cancel,
+  .btn-save,
+  .btn-add {
+    padding: 8px 10px;
+    font-size: 12px;
+  }
+
+  .section-title {
+    font-size: 24px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
   }
 }

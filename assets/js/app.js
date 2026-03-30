@@ -10,6 +10,7 @@
   const LS_MM = 'louvor_ministrante_musicas';
   const LS_SETLISTS = 'louvor_setlists';
   const LS_HISTORY = 'louvor_history';
+  const DATA_KEYS = [LS_USERS, LS_SESSION, LS_MUSICAS, LS_MM, LS_SETLISTS, LS_HISTORY];
 
   const GERAL_PER_PAGE = 8;
 
@@ -1472,6 +1473,115 @@
     }
   }
 
+  function openDataToolsModal() {
+    document.getElementById('modal-data-tools').classList.add('open');
+  }
+
+  function closeDataToolsModal() {
+    document.getElementById('modal-data-tools').classList.remove('open');
+  }
+
+  function exportBackupJson() {
+    const payload = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      data: {
+        [LS_USERS]: getUsers(),
+        [LS_MUSICAS]: getMusicas(),
+        [LS_MM]: getMM(),
+        [LS_SETLISTS]: getSetlists(),
+        [LS_HISTORY]: getHistory()
+      }
+    };
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `app-louvor-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('Backup exportado', 'success');
+  }
+
+  function triggerImportBackup() {
+    const input = document.getElementById('backup-file-input');
+    input.value = '';
+    input.click();
+  }
+
+  async function importBackupFromFile(file) {
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      if (!parsed || typeof parsed !== 'object' || !parsed.data) {
+        throw appError('E500', 'Arquivo de backup invalido');
+      }
+
+      const required = [LS_USERS, LS_MUSICAS, LS_MM, LS_SETLISTS, LS_HISTORY];
+      const missing = required.find((k) => !Array.isArray(parsed.data[k]));
+      if (missing) {
+        throw appError('E500', 'Backup incompleto ou corrompido');
+      }
+
+      writeJson(LS_USERS, parsed.data[LS_USERS]);
+      writeJson(LS_MUSICAS, parsed.data[LS_MUSICAS]);
+      writeJson(LS_MM, parsed.data[LS_MM]);
+      writeJson(LS_SETLISTS, parsed.data[LS_SETLISTS]);
+      writeJson(LS_HISTORY, parsed.data[LS_HISTORY]);
+
+      const currentEmail = currentProfile?.email;
+      if (currentEmail) {
+        const refreshedUser = getUsers().find((u) => normalize(u.email) === normalize(currentEmail));
+        if (refreshedUser) {
+          currentProfile = refreshedUser;
+          saveSession(refreshedUser);
+        } else {
+          clearSession();
+          doLogout();
+          showToast('Backup importado. Faça login novamente.', 'success');
+          closeDataToolsModal();
+          return;
+        }
+      }
+
+      closeDataToolsModal();
+      showToast('Backup importado com sucesso', 'success');
+      updateAdminState();
+      updateHeader();
+      loadMinhas();
+      loadGeral();
+      loadSetlists();
+      loadHistory();
+      if (isAdmin) loadAdminOverview();
+    } catch (error) {
+      showToast(messageForError(error), 'error');
+    }
+  }
+
+  async function clearAllAppData() {
+    const ok = await askConfirm('Resetar app', 'Isso vai apagar todos os dados locais deste navegador. Continuar?');
+    if (!ok) return;
+
+    DATA_KEYS.forEach((k) => localStorage.removeItem(k));
+    ensureSeedData();
+    clearSession();
+    closeDataToolsModal();
+    doLogout();
+    showToast('Dados locais resetados', 'success');
+  }
+
+  function bindBackupInput() {
+    const input = document.getElementById('backup-file-input');
+    if (!input || input.dataset.bound) return;
+    input.addEventListener('change', async () => {
+      const file = input.files && input.files[0];
+      if (!file) return;
+      await importBackupFromFile(file);
+    });
+    input.dataset.bound = '1';
+  }
+
   function escapeHtml(v) {
     return String(v)
       .replaceAll('&', '&amp;')
@@ -1490,6 +1600,7 @@
     bindModalClose();
     bindNetworkBadge();
     registerPwa();
+    bindBackupInput();
     checkSession();
   }
 
@@ -1528,7 +1639,12 @@
     addSongToSetlist,
     removeSongFromSetlist,
     exportSetlistPdf,
-    clearMyHistory
+    clearMyHistory,
+    openDataToolsModal,
+    closeDataToolsModal,
+    exportBackupJson,
+    triggerImportBackup,
+    clearAllAppData
   });
 
   bootstrap();
