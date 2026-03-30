@@ -2,7 +2,7 @@
 -- Execute este arquivo no SQL Editor.
 
 create table if not exists public.profiles (
-  id text primary key,
+  id uuid primary key,
   nome text not null,
   email text not null unique,
   password text not null,
@@ -11,18 +11,18 @@ create table if not exists public.profiles (
 );
 
 create table if not exists public.musicas (
-  id text primary key,
+  id uuid primary key,
   nome text not null,
   link text null,
-  criado_por text null references public.profiles(id) on delete set null,
+  criado_por uuid null references public.profiles(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz null
 );
 
 create table if not exists public.ministrante_musicas (
-  id text primary key,
-  ministrante_id text not null references public.profiles(id) on delete cascade,
-  musica_id text not null references public.musicas(id) on delete cascade,
+  id uuid primary key,
+  ministrante_id uuid not null references public.profiles(id) on delete cascade,
+  musica_id uuid not null references public.musicas(id) on delete cascade,
   tom text null,
   observacoes text null,
   created_at timestamptz not null default now(),
@@ -31,23 +31,23 @@ create table if not exists public.ministrante_musicas (
 );
 
 create table if not exists public.cultos (
-  id text primary key,
+  id uuid primary key,
   title text not null,
   date date not null,
   reminder_at timestamptz null,
-  created_by text null references public.profiles(id) on delete set null,
+  created_by uuid null references public.profiles(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz null,
   items jsonb not null default '[]'::jsonb
 );
 
 create table if not exists public.auditoria (
-  id text primary key,
+  id uuid primary key,
   action text not null,
   details text null,
   target_type text null,
   target_id text null,
-  user_id text null references public.profiles(id) on delete set null,
+  user_id uuid null references public.profiles(id) on delete set null,
   user_email text null,
   created_at timestamptz not null default now()
 );
