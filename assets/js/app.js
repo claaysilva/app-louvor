@@ -1184,7 +1184,7 @@
     } else {
       const s = setlists.find((x) => x.id === editingSetlistId);
       if (!s) {
-        showToast(messageForError(appError('E404', 'Setlist nao encontrado')), 'error');
+        showToast(messageForError(appError('E404', 'Culto nao encontrado')), 'error');
         return;
       }
       s.title = title;
@@ -1208,7 +1208,7 @@
     const setlists = getSetlists();
     const idx = setlists.findIndex((s) => s.id === id);
     if (idx < 0) {
-      showToast(messageForError(appError('E404', 'Setlist nao encontrado')), 'error');
+      showToast(messageForError(appError('E404', 'Culto nao encontrado')), 'error');
       return;
     }
     const removed = setlists[idx];
@@ -1334,7 +1334,7 @@
     }
 
     w.document.write(`
-      <html><head><title>Setlist ${escapeHtml(setlist.title)}</title>
+      <html><head><title>Culto ${escapeHtml(setlist.title)}</title>
       <style>body{font-family:Arial,sans-serif;padding:24px}h1{margin-bottom:4px}p{color:#666}li{margin-bottom:6px}</style>
       </head><body>
       <h1>${escapeHtml(setlist.title)}</h1>
@@ -1345,7 +1345,7 @@
     w.document.close();
     w.focus();
     w.print();
-    logHistory('setlist_exported', `Exportou setlist ${setlist.title}`, 'setlist', setlist.id);
+    logHistory('setlist_exported', `Exportou culto ${setlist.title}`, 'setlist', setlist.id);
   }
 
   function loadHistory() {

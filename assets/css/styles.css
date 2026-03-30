@@ -164,7 +164,7 @@ body {
 .auth-msg.error { color: #ffe1de; background: rgba(192,57,43,.35); }
 .auth-msg.success { color: #d9ffe9; background: rgba(39,174,96,.35); }
 
-#app-screen { display: none; min-height: 100vh; padding-bottom: 78px; }
+#app-screen { display: none; min-height: 100vh; padding-bottom: 110px; }
 
 .app-header {
   position: sticky;
@@ -175,7 +175,8 @@ body {
   padding: 14px 16px;
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
+  gap: 8px;
 }
 
 .header-title {
@@ -203,7 +204,13 @@ body {
   border: 1px solid rgba(255, 224, 167, .45);
 }
 
-.header-user { display: flex; align-items: center; gap: 8px; }
+.header-user {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+}
 
 .user-avatar {
   width: 34px;
@@ -241,6 +248,8 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
   margin-bottom: 10px;
 }
 
@@ -250,7 +259,11 @@ body {
   font-size: 28px;
 }
 
-.section-actions { display: flex; gap: 8px; }
+.section-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
 
 .btn-ghost, .btn-icon, .btn-cancel {
   border: 1px solid var(--border);
@@ -483,8 +496,13 @@ select:focus-visible {
   border: 0;
   border-bottom: 3px solid transparent;
   background: transparent;
-  padding: 15px 10px;
+  padding: 12px 6px;
   font-weight: 700;
+  font-size: 11px;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: var(--text-muted);
   cursor: pointer;
 }
@@ -562,7 +580,12 @@ select:focus-visible {
   color: #fff;
 }
 
-.modal-actions { display: flex; gap: 8px; margin-top: 14px; }
+.modal-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
 .btn-cancel { flex: 1; }
 .btn-save { flex: 2; }
 
@@ -623,6 +646,24 @@ select:focus-visible {
 
   .section-title {
     font-size: 24px;
+  }
+
+  .music-card,
+  .list-item {
+    grid-template-columns: 1fr;
+  }
+
+  .card-actions {
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+
+  .stats-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .toolbar-row {
+    grid-template-columns: 1fr;
   }
 }
 
