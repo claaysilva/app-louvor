@@ -316,7 +316,7 @@
       <div class="modal-handle"></div>
       <h3 id="setlist-detail-title" class="modal-title">Detalhes do culto</h3>
       <div class="field-group">
-        <label class="field-label-dark">Adicionar musica</label>
+        <label class="field-label-dark">Adicionar musica ao culto</label>
         <select id="setlist-song-picker" class="field-input"></select>
       </div>
       <div class="modal-actions">
@@ -325,6 +325,24 @@
         <button class="btn-cancel" onclick="closeSetlistDetailModal()">Fechar</button>
       </div>
       <div id="setlist-song-list"></div>
+    </div>
+  </div>
+
+  <div id="modal-add-culto" class="modal-overlay">
+    <div class="modal">
+      <div class="modal-handle"></div>
+      <h3 class="modal-title">Adicionar ao culto</h3>
+      <p id="add-culto-song-name" class="muted"></p>
+
+      <div class="field-group">
+        <label class="field-label-dark">Escolha o culto</label>
+        <select id="add-culto-picker" class="field-input"></select>
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn-cancel" onclick="closeAddToCultoModal()">Cancelar</button>
+        <button class="btn-save" onclick="confirmAddToCultoModal()">Adicionar</button>
+      </div>
     </div>
   </div>
 

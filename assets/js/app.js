@@ -35,6 +35,7 @@
 
   let editingSetlistId = null;
   let selectedSetlistId = null;
+  let pendingAddCultoSongId = null;
 
   let confirmResolver = null;
   let deferredPrompt = null;
@@ -123,6 +124,55 @@
     return value || SEM_TOM;
   }
 
+  function formatDateBR(dateIso) {
+    if (!dateIso) return 'Nunca tocada';
+    const d = new Date(dateIso.includes('T') ? dateIso : `${dateIso}T00:00:00`);
+    if (Number.isNaN(d.getTime())) return 'Data invalida';
+    return d.toLocaleDateString('pt-BR');
+  }
+
+  function formatDateTimeBR(dateIso) {
+    if (!dateIso) return '-';
+    const d = new Date(dateIso);
+    if (Number.isNaN(d.getTime())) return '-';
+    return d.toLocaleString('pt-BR');
+  }
+
+  function parseSetlistDateToTs(setlist) {
+    const raw = setlist?.date ? `${setlist.date}T00:00:00` : setlist?.created_at;
+    const d = raw ? new Date(raw) : null;
+    return d && !Number.isNaN(d.getTime()) ? d.getTime() : 0;
+  }
+
+  function buildLastPlayedIndexes() {
+    const any = new Map();
+    const mine = new Map();
+    const usersById = new Map(getUsers().map((u) => [u.id, u]));
+
+    getSetlists().forEach((setlist) => {
+      const ts = parseSetlistDateToTs(setlist);
+      (setlist.items || []).forEach((item) => {
+        const ministerId = item.added_by || setlist.created_by || null;
+        const payload = {
+          ts,
+          date: setlist.date || setlist.created_at || null,
+          ministerId,
+          ministerName: usersById.get(ministerId)?.nome || usersById.get(ministerId)?.email || 'Ministrante'
+        };
+
+        const oldAny = any.get(item.musica_id);
+        if (!oldAny || payload.ts > oldAny.ts) any.set(item.musica_id, payload);
+
+        if (ministerId && currentProfile?.id && ministerId === currentProfile.id) {
+          const oldMine = mine.get(item.musica_id);
+          if (!oldMine || payload.ts > oldMine.ts) mine.set(item.musica_id, payload);
+        }
+      });
+    });
+
+    return { any, mine };
+  }
+
   function getUsers() {
     return readJson(LS_USERS, []);
   }
@@ -197,6 +247,63 @@
     if (!localStorage.getItem(LS_MM)) setMM([]);
     if (!localStorage.getItem(LS_SETLISTS)) setSetlists([]);
     if (!localStorage.getItem(LS_HISTORY)) setHistory([]);
+
+    const adminUser = getUsers().find((u) => normalize(u.email) === normalize(ADMIN_EMAIL));
+    if (!adminUser) return;
+
+    const sampleSongs = [
+      'Oceanos',
+      'Ninguem Explica Deus',
+      'Lugar Secreto',
+      'A Casa E Sua',
+      'Rujao',
+      'A Bencao',
+      'Santo Espirito',
+      'Me Atraiu',
+      'Yeshua',
+      'A Ele a Gloria',
+      'Quebrantado Coracao',
+      'Tu Es Bom',
+      'Pra Sempre',
+      'Tua Graca Me Basta',
+      'Deus de Promessas'
+    ];
+
+    const musicas = getMusicas();
+    const mm = getMM();
+    let changedSongs = false;
+    let changedMm = false;
+
+    sampleSongs.forEach((nome, idx) => {
+      let song = musicas.find((m) => normalize(m.nome) === normalize(nome));
+      if (!song) {
+        song = {
+          id: uid(),
+          nome,
+          link: null,
+          criado_por: adminUser.id,
+          created_at: new Date(Date.now() - (idx + 1) * 86400000).toISOString()
+        };
+        musicas.push(song);
+        changedSongs = true;
+      }
+
+      const hasAssoc = mm.some((r) => r.ministrante_id === adminUser.id && r.musica_id === song.id);
+      if (!hasAssoc) {
+        mm.push({
+          id: uid(),
+          ministrante_id: adminUser.id,
+          musica_id: song.id,
+          tom: null,
+          observacoes: null,
+          created_at: new Date(Date.now() - (idx + 1) * 86400000).toISOString()
+        });
+        changedMm = true;
+      }
+    });
+
+    if (changedSongs) setMusicas(musicas);
+    if (changedMm) setMM(mm);
   }
 
   function saveSession(user) {
@@ -469,11 +576,13 @@
     try {
       const musicas = getMusicas();
       const mm = getMM().filter((r) => r.ministrante_id === currentProfile.id);
+      const lastPlayed = buildLastPlayedIndexes();
 
       allMinhas = mm
         .map((row) => ({
           ...row,
-          musicas: musicas.find((m) => m.id === row.musica_id) || null
+          musicas: musicas.find((m) => m.id === row.musica_id) || null,
+          ultimaMinha: lastPlayed.mine.get(row.musica_id) || null
         }))
         .filter((r) => r.musicas);
 
@@ -497,6 +606,7 @@
         const nome = item.musicas?.nome || 'Sem nome';
         const link = item.musicas?.link || '';
         const obs = item.observacoes || '';
+        const ultimaMinha = item.ultimaMinha?.date ? formatDateBR(item.ultimaMinha.date) : 'Ainda nao cantada em culto';
         return `
         <article class="music-card">
           <div>
@@ -505,9 +615,11 @@
               <span class="tom-badge ${item.tom ? 'mine' : 'none'}">${escapeHtml(displayTom(item.tom))}</span>
               ${obs ? ` <span>· ${escapeHtml(obs)}</span>` : ''}
             </div>
+            <div class="last-played">Minha ultima vez: ${escapeHtml(ultimaMinha)}</div>
           </div>
           <div class="card-actions">
             ${link ? `<button class="btn-icon" onclick="abrirLink(event,'${escapeAttr(link)}')">Ouvir</button>` : ''}
+            <button class="btn-icon" onclick="openAddToCultoModal(event,'${item.musica_id}')">Adicionar ao culto</button>
             <button class="btn-icon" onclick="editarMinhas(event,'${item.id}')">Editar</button>
             <button class="btn-icon" onclick="deletarMinhas(event,'${item.id}')">Excluir</button>
           </div>
@@ -526,15 +638,18 @@
       const mm = getMM().filter((r) => r.ministrante_id === currentProfile.id);
       const mmMap = new Map(mm.map((r) => [r.musica_id, r]));
       const users = getUsers();
+      const lastPlayed = buildLastPlayedIndexes();
 
       allGeral = musicas.map((m) => {
         const my = mmMap.get(m.id);
         const dono = users.find((u) => u.id === m.criado_por);
+        const ultima = lastPlayed.any.get(m.id) || null;
         return {
           ...m,
           meuTom: my?.tom || null,
           minhaObs: my?.observacoes || '',
-          profiles: { nome: dono?.nome || 'Desconhecido' }
+          profiles: { nome: dono?.nome || 'Desconhecido' },
+          ultimaGeral: ultima
         };
       });
 
@@ -561,12 +676,90 @@
         <div>
           <div class="card-title">${escapeHtml(item.nome)}</div>
           <div class="card-sub">Meu tom: ${escapeHtml(displayTom(item.meuTom))}</div>
+          <div class="last-played">Ultima vez no culto: ${escapeHtml(item.ultimaGeral?.date ? formatDateBR(item.ultimaGeral.date) : 'Ainda nao tocada')} · ${escapeHtml(item.ultimaGeral?.ministerName || '-')}</div>
         </div>
-        <div>${item.meuTom ? '<span class="tom-badge mine">Com tom</span>' : '<span class="tom-badge none">Sem tom</span>'}</div>
+        <div class="card-actions">
+          ${item.meuTom ? '<span class="tom-badge mine">Com tom</span>' : '<span class="tom-badge none">Sem tom</span>'}
+          <button class="btn-icon" onclick="openAddToCultoModal(event,'${item.id}')">Adicionar ao culto</button>
+        </div>
       </article>
     `
       )
       .join('');
+  }
+
+  function openAddToCultoModal(e, musicaId) {
+    if (e) e.stopPropagation();
+    pendingAddCultoSongId = musicaId;
+
+    const song = getMusicas().find((m) => m.id === musicaId);
+    const picker = document.getElementById('add-culto-picker');
+    const cultos = getSetlists().slice().sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+
+    document.getElementById('add-culto-song-name').textContent = song ? `Musica: ${song.nome}` : 'Selecione o culto';
+    if (!cultos.length) {
+      picker.innerHTML = '<option value="">Nenhum culto cadastrado</option>';
+    } else {
+      picker.innerHTML = cultos.map((c) => `<option value="${c.id}">${escapeHtml(c.title)} (${escapeHtml(c.date || '-')})</option>`).join('');
+    }
+
+    document.getElementById('modal-add-culto').classList.add('open');
+  }
+
+  function closeAddToCultoModal() {
+    document.getElementById('modal-add-culto').classList.remove('open');
+    pendingAddCultoSongId = null;
+  }
+
+  function confirmAddToCultoModal() {
+    const cultoId = document.getElementById('add-culto-picker').value;
+    if (!cultoId || !pendingAddCultoSongId) {
+      showToast('Escolha um culto valido', 'error');
+      return;
+    }
+
+    const ok = addSongToCulto(cultoId, pendingAddCultoSongId);
+    if (ok) closeAddToCultoModal();
+  }
+
+  function addSongToCulto(cultoId, musicaId) {
+    const setlists = getSetlists();
+    const setlist = setlists.find((s) => s.id === cultoId);
+    if (!setlist) {
+      showToast('Culto nao encontrado', 'error');
+      return false;
+    }
+
+    setlist.items = setlist.items || [];
+    const exists = setlist.items.some((i) => i.musica_id === musicaId);
+    if (exists) {
+      showToast('Essa musica ja esta neste culto', 'error');
+      return false;
+    }
+
+    setlist.items.push({
+      musica_id: musicaId,
+      added_at: new Date().toISOString(),
+      added_by: currentProfile.id
+    });
+    setSetlists(setlists);
+
+    const songs = getMusicas();
+    const songName = songs.find((s) => s.id === musicaId)?.nome || 'musica';
+    logHistory('setlist_song_added', `Adicionou ${songName} em ${setlist.title}`, 'setlist', setlist.id);
+
+    const alert = detectRecentRepetition(musicaId, setlist.id, 30);
+    if (alert) {
+      showToast(`Atencao: ${songName} ja foi usada recentemente em ${alert}`, 'error');
+    } else {
+      showToast('Musica adicionada ao culto', 'success');
+    }
+
+    if (selectedSetlistId === cultoId) renderSetlistSongs(setlist);
+    loadSetlists();
+    loadMinhas();
+    loadGeral();
+    return true;
   }
 
   function attachSearchHandlers() {
@@ -1104,6 +1297,7 @@
     }
 
     const songs = getMusicas();
+    const users = getUsers();
     el.innerHTML = list
       .map((s) => {
         const count = (s.items || []).length;
@@ -1112,12 +1306,22 @@
           .map((it) => songs.find((m) => m.id === it.musica_id)?.nome)
           .filter(Boolean)
           .join(', ');
+        const owner = users.find((u) => u.id === s.created_by);
+        const ownerName = owner?.nome || owner?.email || '-';
+        const previewList = (s.items || [])
+          .slice(0, 4)
+          .map((it, idx) => {
+            const songName = songs.find((m) => m.id === it.musica_id)?.nome || 'Musica removida';
+            return `<div class="setlist-preview-item">${idx + 1}. ${escapeHtml(songName)}</div>`;
+          })
+          .join('');
 
         return `
           <article class="setlist-card">
             <div class="setlist-title">${escapeHtml(s.title)}</div>
             <div class="setlist-sub">Data: ${escapeHtml(s.date)} · Musicas: ${count}</div>
-            <div class="setlist-sub">${escapeHtml(nextSongs || 'Sem musicas')}</div>
+            <div class="setlist-sub">Responsavel: ${escapeHtml(ownerName)}</div>
+            ${previewList ? `<div class="setlist-preview-list">${previewList}</div>` : `<div class="setlist-sub">${escapeHtml(nextSongs || 'Sem musicas')}</div>`}
             <div class="setlist-actions">
               <button class="btn-ghost" onclick="openSetlistDetail('${s.id}')">Abrir</button>
               <button class="btn-ghost" onclick="openSetlistModal('${s.id}')">Editar</button>
@@ -1249,11 +1453,16 @@
     }
 
     el.innerHTML = items
-      .map((it) => {
+      .map((it, idx) => {
         const song = songs.find((s) => s.id === it.musica_id);
+        const minister = getUsers().find((u) => u.id === (it.added_by || setlist.created_by));
+        const ministerName = minister?.nome || minister?.email || 'Ministrante';
         return `
           <div class="setlist-song-item">
-            <div>${escapeHtml(song?.nome || 'Musica removida')}</div>
+            <div class="setlist-song-main">
+              <div class="setlist-song-name">${idx + 1}. ${escapeHtml(song?.nome || 'Musica removida')}</div>
+              <div class="setlist-song-meta">Incluida por ${escapeHtml(ministerName)} em ${escapeHtml(formatDateTimeBR(it.added_at))}</div>
+            </div>
             <button class="btn-cancel" onclick="removeSongFromSetlist('${it.musica_id}')">Remover</button>
           </div>
         `;
@@ -1269,29 +1478,7 @@
     const musicaId = document.getElementById('setlist-song-picker').value;
     if (!musicaId) return;
 
-    setlist.items = setlist.items || [];
-    const exists = setlist.items.some((i) => i.musica_id === musicaId);
-    if (exists) {
-      showToast('Musica ja esta no culto', 'error');
-      return;
-    }
-
-    setlist.items.push({ musica_id: musicaId, added_at: new Date().toISOString() });
-    setSetlists(setlists);
-
-    const songs = getMusicas();
-    const songName = songs.find((s) => s.id === musicaId)?.nome || 'musica';
-    logHistory('setlist_song_added', `Adicionou ${songName} em ${setlist.title}`, 'setlist', setlist.id);
-
-    const alert = detectRecentRepetition(musicaId, setlist.id, 30);
-    if (alert) {
-      showToast(`Atencao: ${songName} ja foi usada recentemente em ${alert}`, 'error');
-    } else {
-      showToast('Musica adicionada ao culto', 'success');
-    }
-
-    renderSetlistSongs(setlist);
-    loadSetlists();
+    addSongToCulto(setlist.id, musicaId);
   }
 
   function removeSongFromSetlist(musicaId) {
@@ -1325,7 +1512,18 @@
     const setlist = getSetlists().find((s) => s.id === selectedSetlistId);
     if (!setlist) return;
     const songs = getMusicas();
-    const lines = (setlist.items || []).map((it, i) => `${i + 1}. ${songs.find((s) => s.id === it.musica_id)?.nome || 'Musica removida'}`);
+    const users = getUsers();
+    const lines = (setlist.items || []).map((it, i) => {
+      const nome = songs.find((s) => s.id === it.musica_id)?.nome || 'Musica removida';
+      const minister = users.find((u) => u.id === (it.added_by || setlist.created_by));
+      const ministerName = minister?.nome || minister?.email || 'Ministrante';
+      return {
+        index: i + 1,
+        nome,
+        ministerName,
+        addedAt: formatDateTimeBR(it.added_at)
+      };
+    });
 
     const w = window.open('', '_blank');
     if (!w) {
@@ -1335,11 +1533,23 @@
 
     w.document.write(`
       <html><head><title>Culto ${escapeHtml(setlist.title)}</title>
-      <style>body{font-family:Arial,sans-serif;padding:24px}h1{margin-bottom:4px}p{color:#666}li{margin-bottom:6px}</style>
+      <meta name="viewport" content="width=device-width, initial-scale=1" />
+      <style>
+        @page { size: auto; margin: 10mm; }
+        body { font-family: Arial, sans-serif; margin: 0; padding: 12px; color: #1f1f1f; }
+        .wrap { max-width: 420px; margin: 0 auto; }
+        h1 { margin: 0 0 6px; font-size: 24px; }
+        p { margin: 0 0 12px; color: #666; font-size: 14px; }
+        .item { border: 1px solid #ddd; border-radius: 10px; padding: 10px; margin-bottom: 8px; }
+        .item-title { font-weight: 700; font-size: 16px; }
+        .item-meta { margin-top: 4px; font-size: 13px; color: #666; }
+      </style>
       </head><body>
+      <div class="wrap">
       <h1>${escapeHtml(setlist.title)}</h1>
-      <p>Data: ${escapeHtml(setlist.date)}</p>
-      <ol>${lines.map((l) => `<li>${escapeHtml(l.replace(/^\d+\.\s/, ''))}</li>`).join('')}</ol>
+      <p>Data: ${escapeHtml(setlist.date)} · Total: ${lines.length} musicas</p>
+      ${lines.map((l) => `<div class="item"><div class="item-title">${l.index}. ${escapeHtml(l.nome)}</div><div class="item-meta">Incluida por ${escapeHtml(l.ministerName)} em ${escapeHtml(l.addedAt)}</div></div>`).join('')}
+      </div>
       </body></html>
     `);
     w.document.close();
@@ -1358,15 +1568,36 @@
       return;
     }
 
+    const users = getUsers();
+    const labels = {
+      user_created: 'Nova conta criada',
+      admin_user_created: 'Administrador criou um usuario',
+      song_created: 'Musica cadastrada',
+      song_linked: 'Musica adicionada em Minhas musicas',
+      song_updated: 'Musica atualizada',
+      song_unlinked: 'Musica removida de Minhas musicas',
+      tom_saved: 'Tom da musica atualizado',
+      setlist_created: 'Culto criado',
+      setlist_updated: 'Culto atualizado',
+      setlist_deleted: 'Culto removido',
+      setlist_song_added: 'Musica adicionada ao culto',
+      setlist_song_removed: 'Musica removida do culto',
+      setlist_exported: 'Culto exportado para PDF',
+      admin_merge_duplicates: 'Duplicidades de musicas mescladas'
+    };
+
     el.innerHTML = list
       .slice(0, 150)
       .map((h) => {
+        const person = users.find((u) => u.id === h.userId);
+        const personName = person?.nome || h.userEmail || 'Usuario';
+        const friendlyAction = labels[h.action] || 'Acao realizada no sistema';
         const when = new Date(h.created_at).toLocaleString('pt-BR');
         return `
           <article class="history-item">
-            <div class="history-title">${escapeHtml(h.action)}</div>
+            <div class="history-title">${escapeHtml(friendlyAction)}</div>
             <div class="history-sub">${escapeHtml(h.details || '-')}</div>
-            <div class="history-sub">${escapeHtml(h.userEmail || '-')} · ${escapeHtml(when)}</div>
+            <div class="history-sub">Por ${escapeHtml(personName)} · ${escapeHtml(when)}</div>
           </article>
         `;
       })
@@ -1644,7 +1875,10 @@
     closeDataToolsModal,
     exportBackupJson,
     triggerImportBackup,
-    clearAllAppData
+    clearAllAppData,
+    openAddToCultoModal,
+    closeAddToCultoModal,
+    confirmAddToCultoModal
   });
 
   bootstrap();

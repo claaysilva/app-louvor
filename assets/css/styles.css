@@ -449,6 +449,21 @@ select:focus-visible {
   box-shadow: 0 3px 10px var(--shadow);
 }
 
+.setlist-preview-list {
+  margin-top: 8px;
+  display: grid;
+  gap: 6px;
+}
+
+.setlist-preview-item {
+  font-size: 13px;
+  color: var(--text);
+  background: #fcf8f1;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+
 .setlist-title,
 .history-title {
   font-weight: 700;
@@ -476,6 +491,35 @@ select:focus-visible {
   border-radius: 10px;
   padding: 8px 10px;
   margin-bottom: 6px;
+}
+
+.setlist-song-main {
+  min-width: 0;
+}
+
+.setlist-song-name {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.setlist-song-meta {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.last-played {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-top: 6px;
+}
+
+.history-title {
+  font-size: 15px;
+}
+
+.history-sub {
+  font-size: 13px;
 }
 
 .nav-tabs {
