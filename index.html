@@ -1,0 +1,197 @@
+﻿<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>App Louvor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="assets/css/styles.css" />
+</head>
+<body>
+  <div id="network-badge" class="network-badge">Offline</div>
+
+  <div id="auth-screen">
+    <div class="auth-logo">Louvor</div>
+    <div class="auth-subtitle">ministerio de musica</div>
+
+    <div class="auth-card">
+      <div class="auth-tabs">
+        <button class="auth-tab active" onclick="switchTab('login')">Entrar</button>
+        <button class="auth-tab" onclick="switchTab('register')">Cadastrar</button>
+      </div>
+
+      <div id="form-login" class="auth-form">
+        <div>
+          <label class="field-label">E-mail</label>
+          <input type="email" id="login-email" class="auth-input" placeholder="seu@email.com" />
+        </div>
+        <div>
+          <label class="field-label">Senha</label>
+          <div class="input-inline">
+            <input type="password" id="login-pass" class="auth-input" placeholder="********" />
+            <button type="button" class="toggle-pass" onclick="togglePass('login-pass')">Ver</button>
+          </div>
+        </div>
+        <button id="btn-login" class="btn-primary" onclick="doLogin()">Entrar</button>
+        <div id="login-msg" class="auth-msg" style="display:none"></div>
+      </div>
+
+      <div id="form-register" class="auth-form hidden">
+        <div>
+          <label class="field-label">Nome</label>
+          <input type="text" id="reg-nome" class="auth-input" placeholder="Seu nome" />
+        </div>
+        <div>
+          <label class="field-label">E-mail</label>
+          <input type="email" id="reg-email" class="auth-input" placeholder="seu@email.com" />
+        </div>
+        <div>
+          <label class="field-label">Senha</label>
+          <div class="input-inline">
+            <input type="password" id="reg-pass" class="auth-input" placeholder="minimo 6 caracteres" />
+            <button type="button" class="toggle-pass" onclick="togglePass('reg-pass')">Ver</button>
+          </div>
+        </div>
+        <button id="btn-register" class="btn-primary" onclick="doRegister()">Criar conta</button>
+        <div id="reg-msg" class="auth-msg" style="display:none"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="app-screen">
+    <header class="app-header">
+      <div>
+        <div class="header-title">App Louvor</div>
+        <div id="header-user-name" class="header-user-name"></div>
+      </div>
+      <div class="header-user">
+        <div class="user-avatar" id="user-avatar">?</div>
+        <button class="btn-icon" onclick="doLogout()" title="Sair">Sair</button>
+      </div>
+    </header>
+
+    <section class="stats-strip">
+      <div class="stat-card">
+        <div class="stat-label">Minhas</div>
+        <div id="stat-minhas" class="stat-value">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Geral</div>
+        <div id="stat-geral" class="stat-value">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Com tom</div>
+        <div id="stat-com-tom" class="stat-value">0</div>
+      </div>
+    </section>
+
+    <main id="page-minhas" class="page active">
+      <div class="section-header">
+        <h2 class="section-title">Minhas Musicas</h2>
+        <div class="section-actions">
+          <button class="btn-ghost" onclick="exportarMinhasCsv()">Exportar CSV</button>
+          <button class="btn-add" onclick="openModalMinhas()">Adicionar</button>
+        </div>
+      </div>
+
+      <div class="search-bar">
+        <span class="search-icon">Buscar</span>
+        <input id="search-minhas" type="text" placeholder="Buscar musica" />
+      </div>
+
+      <div id="list-minhas"></div>
+    </main>
+
+    <main id="page-geral" class="page">
+      <div class="section-header">
+        <h2 class="section-title">Lista Geral</h2>
+        <div class="section-actions">
+          <button class="btn-ghost" onclick="loadGeral(true)">Atualizar</button>
+        </div>
+      </div>
+
+      <div class="search-bar">
+        <span class="search-icon">Buscar</span>
+        <input id="search-geral" type="text" placeholder="Buscar na lista geral" />
+      </div>
+
+      <div id="list-geral"></div>
+    </main>
+
+    <nav class="nav-tabs">
+      <button class="nav-tab active" onclick="showPage('minhas')">Minhas</button>
+      <button class="nav-tab" onclick="showPage('geral')">Geral</button>
+    </nav>
+  </div>
+
+  <div id="modal-minhas" class="modal-overlay">
+    <div class="modal">
+      <div class="modal-handle"></div>
+      <h3 id="modal-minhas-title" class="modal-title">Adicionar musica</h3>
+
+      <div class="field-group">
+        <label class="field-label-dark">Nome da musica *</label>
+        <input id="m-nome" type="text" class="field-input" placeholder="Ex: Oceanos" />
+      </div>
+
+      <div class="field-group">
+        <label class="field-label-dark">Link</label>
+        <input id="m-link" type="url" class="field-input" placeholder="https://..." />
+      </div>
+
+      <div class="field-group">
+        <label class="field-label-dark">Meu tom *</label>
+        <div id="tom-grid" class="tom-grid"></div>
+      </div>
+
+      <div class="field-group">
+        <label class="field-label-dark">Observacoes</label>
+        <input id="m-obs" type="text" class="field-input" placeholder="Opcional" />
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn-cancel" onclick="closeModalMinhas()">Cancelar</button>
+        <button id="btn-save-minhas" class="btn-save" onclick="saveMusica()">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-geral" class="modal-overlay">
+    <div class="modal">
+      <div class="modal-handle"></div>
+      <div id="geral-detail-content"></div>
+      <div id="geral-detail-actions" class="modal-actions"></div>
+    </div>
+  </div>
+
+  <div id="modal-salvar-tom" class="modal-overlay">
+    <div class="modal">
+      <div class="modal-handle"></div>
+      <h3 class="modal-title">Salvar meu tom</h3>
+      <p id="salvar-tom-nome" class="muted"></p>
+
+      <div class="field-group">
+        <label class="field-label-dark">Meu tom *</label>
+        <div id="tom-grid-salvar" class="tom-grid"></div>
+      </div>
+
+      <div class="field-group">
+        <label class="field-label-dark">Observacoes</label>
+        <input id="salvar-obs" type="text" class="field-input" placeholder="Opcional" />
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn-cancel" onclick="closeModalSalvarTom()">Cancelar</button>
+        <button id="btn-salvar-tom" class="btn-save" onclick="confirmarSalvarTom()">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="assets/js/config.js"></script>
+  <script src="assets/js/app.js" defer></script>
+</body>
+</html>
