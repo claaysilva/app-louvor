@@ -106,6 +106,12 @@
         <input id="search-minhas" type="text" placeholder="Buscar musica" />
       </div>
 
+      <div class="recency-legend" aria-label="Legenda de recencia de uso">
+        <span class="recency-pill red">Ultimos 3 cultos</span>
+        <span class="recency-pill yellow">Ultimos 6 cultos</span>
+        <span class="recency-pill green">Ultimos 9 cultos</span>
+      </div>
+
       <div id="list-minhas"></div>
 
       <section id="admin-panel" class="admin-panel hidden">
@@ -190,7 +196,9 @@
 
       <div class="field-group">
         <label class="field-label-dark">Nome da musica *</label>
-        <input id="m-nome" type="text" class="field-input" placeholder="Ex: Oceanos" />
+        <input id="m-nome" type="text" class="field-input" list="musica-suggestions" placeholder="Ex: Oceanos" />
+        <datalist id="musica-suggestions"></datalist>
+        <p id="m-nome-hint" class="muted small hidden"></p>
       </div>
 
       <div class="field-group">

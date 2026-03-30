@@ -173,6 +173,69 @@
     return { any, mine };
   }
 
+  function buildRecencyByCultos() {
+    const recentCultos = getSetlists()
+      .slice()
+      .sort((a, b) => parseSetlistDateToTs(b) - parseSetlistDateToTs(a))
+      .slice(0, 9);
+
+    const map = new Map();
+    recentCultos.forEach((culto, idx) => {
+      const rank = idx + 1;
+      (culto.items || []).forEach((item) => {
+        const prev = map.get(item.musica_id);
+        if (!prev || rank < prev.rank) {
+          map.set(item.musica_id, { rank });
+        }
+      });
+    });
+    return map;
+  }
+
+  function recencySignal(rank) {
+    if (!rank) return null;
+    if (rank <= 3) return { cls: 'red', label: 'Muito recente' };
+    if (rank <= 6) return { cls: 'yellow', label: 'Recente' };
+    if (rank <= 9) return { cls: 'green', label: 'Menos recente' };
+    return null;
+  }
+
+  function updateMusicSuggestions() {
+    const datalist = document.getElementById('musica-suggestions');
+    if (!datalist) return;
+    datalist.innerHTML = getMusicas()
+      .slice()
+      .sort((a, b) => String(a.nome).localeCompare(String(b.nome)))
+      .map((m) => `<option value="${escapeAttr(m.nome)}"></option>`)
+      .join('');
+  }
+
+  function bindMusicNameSuggestionHint() {
+    const input = document.getElementById('m-nome');
+    const hint = document.getElementById('m-nome-hint');
+    if (!input || !hint || input.dataset.bound) return;
+
+    input.addEventListener('input', () => {
+      const nome = input.value.trim();
+      if (!nome || editingMusicaId) {
+        hint.classList.add('hidden');
+        hint.textContent = '';
+        return;
+      }
+
+      const exists = getMusicas().find((m) => normalize(m.nome) === normalize(nome));
+      if (exists) {
+        hint.classList.remove('hidden');
+        hint.textContent = 'Musica ja cadastrada. Ao salvar, ela sera reutilizada para evitar duplicacao.';
+      } else {
+        hint.classList.add('hidden');
+        hint.textContent = '';
+      }
+    });
+
+    input.dataset.bound = '1';
+  }
+
   function getUsers() {
     return readJson(LS_USERS, []);
   }
@@ -577,12 +640,14 @@
       const musicas = getMusicas();
       const mm = getMM().filter((r) => r.ministrante_id === currentProfile.id);
       const lastPlayed = buildLastPlayedIndexes();
+      const recency = buildRecencyByCultos();
 
       allMinhas = mm
         .map((row) => ({
           ...row,
           musicas: musicas.find((m) => m.id === row.musica_id) || null,
-          ultimaMinha: lastPlayed.mine.get(row.musica_id) || null
+          ultimaMinha: lastPlayed.mine.get(row.musica_id) || null,
+          recency: recency.get(row.musica_id) || null
         }))
         .filter((r) => r.musicas);
 
@@ -607,12 +672,14 @@
         const link = item.musicas?.link || '';
         const obs = item.observacoes || '';
         const ultimaMinha = item.ultimaMinha?.date ? formatDateBR(item.ultimaMinha.date) : 'Ainda nao cantada em culto';
+        const rec = recencySignal(item.recency?.rank);
         return `
         <article class="music-card">
           <div>
             <div class="card-title">${escapeHtml(nome)}</div>
             <div class="card-sub">
               <span class="tom-badge ${item.tom ? 'mine' : 'none'}">${escapeHtml(displayTom(item.tom))}</span>
+              ${rec ? `<span class="recency-pill recency-tag ${rec.cls}" title="Tocada entre os ultimos cultos">${rec.label}</span>` : ''}
               ${obs ? ` <span>· ${escapeHtml(obs)}</span>` : ''}
             </div>
             <div class="last-played">Minha ultima vez: ${escapeHtml(ultimaMinha)}</div>
@@ -639,6 +706,7 @@
       const mmMap = new Map(mm.map((r) => [r.musica_id, r]));
       const users = getUsers();
       const lastPlayed = buildLastPlayedIndexes();
+      const recency = buildRecencyByCultos();
 
       allGeral = musicas.map((m) => {
         const my = mmMap.get(m.id);
@@ -649,7 +717,8 @@
           meuTom: my?.tom || null,
           minhaObs: my?.observacoes || '',
           profiles: { nome: dono?.nome || 'Desconhecido' },
-          ultimaGeral: ultima
+          ultimaGeral: ultima,
+          recency: recency.get(m.id) || null
         };
       });
 
@@ -671,7 +740,9 @@
 
     el.innerHTML = list
       .map(
-        (item) => `
+        (item) => {
+          const rec = recencySignal(item.recency?.rank);
+          return `
       <article class="list-item" onclick="openGeralDetail('${item.id}')">
         <div>
           <div class="card-title">${escapeHtml(item.nome)}</div>
@@ -680,10 +751,12 @@
         </div>
         <div class="card-actions">
           ${item.meuTom ? '<span class="tom-badge mine">Com tom</span>' : '<span class="tom-badge none">Sem tom</span>'}
+          ${rec ? `<span class="recency-pill ${rec.cls}" title="Tocada entre os ultimos cultos">${rec.label}</span>` : ''}
           <button class="btn-icon" onclick="openAddToCultoModal(event,'${item.id}')">Adicionar ao culto</button>
         </div>
       </article>
-    `
+    `;
+        }
       )
       .join('');
   }
@@ -838,6 +911,12 @@
     document.getElementById('m-nome').disabled = false;
     document.getElementById('m-link').value = '';
     document.getElementById('m-obs').value = '';
+    const hint = document.getElementById('m-nome-hint');
+    if (hint) {
+      hint.classList.add('hidden');
+      hint.textContent = '';
+    }
+    updateMusicSuggestions();
     setTomGrid('tom-grid', SEM_TOM, (t) => {
       selectedTom = t;
     });
@@ -863,6 +942,12 @@
     document.getElementById('m-nome').disabled = false;
     document.getElementById('m-link').value = item.musicas?.link || '';
     document.getElementById('m-obs').value = item.observacoes || '';
+    const hint = document.getElementById('m-nome-hint');
+    if (hint) {
+      hint.classList.add('hidden');
+      hint.textContent = '';
+    }
+    updateMusicSuggestions();
     setTomGrid('tom-grid', selectedTom, (t) => {
       selectedTom = t;
     });
@@ -1832,6 +1917,7 @@
     bindNetworkBadge();
     registerPwa();
     bindBackupInput();
+    bindMusicNameSuggestionHint();
     checkSession();
   }
 

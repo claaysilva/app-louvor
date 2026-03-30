@@ -514,6 +514,45 @@ select:focus-visible {
   margin-top: 6px;
 }
 
+.recency-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.recency-pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  border: 1px solid transparent;
+}
+
+.recency-pill.red {
+  background: #fde8e8;
+  color: #a61b1b;
+  border-color: #f5b7b7;
+}
+
+.recency-pill.yellow {
+  background: #fff7dd;
+  color: #8a6a00;
+  border-color: #f3df9f;
+}
+
+.recency-pill.green {
+  background: #e6f7ec;
+  color: #1f7a42;
+  border-color: #b9e6c9;
+}
+
+.recency-tag {
+  margin-left: 4px;
+}
+
 .history-title {
   font-size: 15px;
 }
