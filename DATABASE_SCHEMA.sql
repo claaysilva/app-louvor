@@ -59,3 +59,14 @@ alter table public.musicas disable row level security;
 alter table public.ministrante_musicas disable row level security;
 alter table public.cultos disable row level security;
 alter table public.auditoria disable row level security;
+
+-- Permissoes para uso com anon key no frontend.
+grant usage on schema public to anon, authenticated;
+grant all privileges on table public.profiles to anon, authenticated;
+grant all privileges on table public.musicas to anon, authenticated;
+grant all privileges on table public.ministrante_musicas to anon, authenticated;
+grant all privileges on table public.cultos to anon, authenticated;
+grant all privileges on table public.auditoria to anon, authenticated;
+
+-- NUNCA use service_role key no frontend.
+-- service_role deve ficar apenas no backend (Edge Function / API).

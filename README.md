@@ -51,8 +51,9 @@ Hospedavel como arquivo estatico (ex.: Vercel).
 1. Execute o arquivo DATABASE_SCHEMA.sql no SQL Editor do Supabase.
 2. Preencha assets/js/config.js com:
 	- SUPA_URL
-	- SUPA_KEY
+	- SUPA_KEY (anon public key)
 3. Sem essa configuracao, o app cai para cache local temporario no navegador.
+4. Nao use service_role no frontend.
 
 Tabelas/colunas criadas:
 - profiles (id, nome, email, password, role, created_at)
@@ -64,6 +65,7 @@ Tabelas/colunas criadas:
 ## Observacao importante
 
 Com banco configurado, os dados sao sincronizados no Supabase e mantidos no localStorage apenas como cache.
+Se service_role foi exposta no frontend, rotacione essa chave no Supabase imediatamente.
 
 ## Escopo por fases
 
