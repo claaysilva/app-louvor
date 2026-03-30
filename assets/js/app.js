@@ -1,23 +1,43 @@
-﻿(function () {
-  const cfg = window.APP_CONFIG || {};
-  const SUPA_URL = cfg.SUPA_URL || '';
-  const SUPA_KEY = cfg.SUPA_KEY || '';
-  const ADMIN_FALLBACK_EMAIL = 'claytonpetry1@gmail.com';
+(function () {
+  const ADMIN_EMAIL = 'claytonpetry1@gmail.com';
+  const ADMIN_PASSWORD = '123456';
   const SEM_TOM = 'Sem tom';
 
-  const TONS = [SEM_TOM, 'Do','Do#','Re','Re#','Mi','Fa','Fa#','Sol','Sol#','La','La#','Si'];
+  const TONS = [SEM_TOM, 'Do', 'Do#', 'Re', 'Re#', 'Mi', 'Fa', 'Fa#', 'Sol', 'Sol#', 'La', 'La#', 'Si'];
+
+  const LS_USERS = 'louvor_users';
+  const LS_SESSION = 'louvor_session';
+  const LS_MUSICAS = 'louvor_musicas';
+  const LS_MM = 'louvor_ministrante_musicas';
 
   let currentUser = null;
   let currentProfile = null;
   let allMinhas = [];
   let allGeral = [];
+  let allAdminRecords = [];
   let selectedTom = '';
   let selectedTomSalvar = '';
   let editingMusicaId = null;
   let editingMusicaGlobalId = null;
   let geralSelectedMusica = null;
   let isAdmin = false;
-  let allAdminRecords = [];
+
+  function uid() {
+    return Math.random().toString(36).slice(2) + Date.now().toString(36);
+  }
+
+  function readJson(key, fallback) {
+    try {
+      const v = localStorage.getItem(key);
+      return v ? JSON.parse(v) : fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
+  function writeJson(key, value) {
+    localStorage.setItem(key, JSON.stringify(value));
+  }
 
   function normalize(value) {
     return (value || '')
@@ -41,107 +61,62 @@
     }
   }
 
-  async function supa(path, options = {}, retry = true) {
-    const headers = {
-      apikey: SUPA_KEY,
-      'Content-Type': 'application/json',
-      ...(options.headers || {})
-    };
-
-    if (currentUser?.access_token) headers.Authorization = `Bearer ${currentUser.access_token}`;
-
-    const res = await fetch(SUPA_URL + path, { ...options, headers });
-
-    if (res.status === 401 && retry && currentUser?.refresh_token) {
-      const refreshed = await refreshSession();
-      if (refreshed) return supa(path, options, false);
-    }
-
-    if (!res.ok) {
-      let err = {};
-      try { err = await res.json(); } catch {}
-      throw new Error(err.message || err.error_description || 'Erro na requisicao');
-    }
-
-    const text = await res.text();
-    return text ? JSON.parse(text) : null;
+  function getUsers() {
+    return readJson(LS_USERS, []);
   }
 
-  async function supaAuth(path, body) {
-    const res = await fetch(`${SUPA_URL}/auth/v1${path}`, {
-      method: 'POST',
-      headers: { apikey: SUPA_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error_description || data.msg || 'Erro de autenticacao');
-    return data;
+  function setUsers(users) {
+    writeJson(LS_USERS, users);
   }
 
-  async function invokeEdgeFunction(functionName, body, retry = true) {
-    const headers = {
-      apikey: SUPA_KEY,
-      'Content-Type': 'application/json'
-    };
+  function getMusicas() {
+    return readJson(LS_MUSICAS, []);
+  }
 
-    if (currentUser?.access_token) {
-      headers.Authorization = `Bearer ${currentUser.access_token}`;
-    }
+  function setMusicas(musicas) {
+    writeJson(LS_MUSICAS, musicas);
+  }
 
-    let res;
-    try {
-      res = await fetch(`${SUPA_URL}/functions/v1/${functionName}`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(body || {})
+  function getMM() {
+    return readJson(LS_MM, []);
+  }
+
+  function setMM(mm) {
+    writeJson(LS_MM, mm);
+  }
+
+  function ensureSeedData() {
+    const users = getUsers();
+    const hasAdmin = users.some(u => normalize(u.email) === normalize(ADMIN_EMAIL));
+
+    if (!hasAdmin) {
+      users.push({
+        id: uid(),
+        nome: 'Clayton',
+        email: ADMIN_EMAIL,
+        password: ADMIN_PASSWORD,
+        role: 'admin',
+        created_at: new Date().toISOString()
       });
-    } catch {
-      throw new Error('Falha de conexao com Edge Function. Verifique se admin-create-user esta ativa/deployada no Supabase.');
+      setUsers(users);
     }
 
-    let data = {};
-    let rawText = '';
-    try {
-      rawText = await res.text();
-      data = rawText ? JSON.parse(rawText) : {};
-    } catch {
-      data = rawText ? { error: rawText } : {};
-    }
-
-    if (!res.ok) {
-      if (res.status === 401 && retry && currentUser?.refresh_token) {
-        const refreshed = await refreshSession();
-        if (refreshed) {
-          return invokeEdgeFunction(functionName, body, false);
-        }
-      }
-      if (res.status === 404) {
-        throw new Error('Edge Function admin-create-user nao encontrada (404). Faça o deploy/publicacao da funcao no Supabase.');
-      }
-      if (res.status === 401) {
-        throw new Error('Sessao invalida para chamar a Edge Function. Faça login novamente.');
-      }
-      if (res.status === 403) {
-        throw new Error('Usuario sem permissao de admin para cadastrar novos usuarios.');
-      }
-      throw new Error(data.error || data.message || `Erro ${res.status} ao executar acao administrativa`);
-    }
-
-    return data;
+    if (!localStorage.getItem(LS_MUSICAS)) setMusicas([]);
+    if (!localStorage.getItem(LS_MM)) setMM([]);
   }
 
-  async function refreshSession() {
-    try {
-      const data = await supaAuth('/token?grant_type=refresh_token', {
-        refresh_token: currentUser.refresh_token
-      });
-      currentUser = data;
-      localStorage.setItem('supa_session', JSON.stringify(data));
-      return true;
-    } catch {
-      doLogout();
-      return false;
-    }
+  function saveSession(user) {
+    writeJson(LS_SESSION, { userId: user.id, at: new Date().toISOString() });
+  }
+
+  function clearSession() {
+    localStorage.removeItem(LS_SESSION);
+  }
+
+  function getSessionUser() {
+    const sess = readJson(LS_SESSION, null);
+    if (!sess?.userId) return null;
+    return getUsers().find(u => u.id === sess.userId) || null;
   }
 
   function switchTab(tab) {
@@ -185,67 +160,18 @@
   }
 
   function updateAdminState() {
-    const email = (currentUser?.user?.email || '').toLowerCase();
+    const email = (currentProfile?.email || '').toLowerCase();
     const role = (currentProfile?.role || '').toLowerCase();
-    isAdmin = role === 'admin' || email === ADMIN_FALLBACK_EMAIL;
+    isAdmin = role === 'admin' || email === ADMIN_EMAIL;
+
     const adminBtn = document.getElementById('btn-admin-create');
     const adminPanel = document.getElementById('admin-panel');
     if (adminBtn) adminBtn.classList.toggle('hidden', !isAdmin);
     if (adminPanel) adminPanel.classList.toggle('hidden', !isAdmin);
   }
 
-  function mapAuthError(message, flow) {
-    const raw = String(message || '').toLowerCase();
-
-    if (raw.includes('email rate limit exceeded') || raw.includes('rate limit')) {
-      if (flow === 'register') {
-        return 'Limite temporario de cadastro do Supabase. Aguarde alguns minutos ou entre como admin e use "Novo usuario".';
-      }
-      return 'Muitas tentativas em pouco tempo. Aguarde alguns minutos e tente novamente.';
-    }
-
-    if (raw.includes('forbidden') || raw.includes('not admin')) {
-      return 'Acao permitida apenas para administrador.';
-    }
-
-    if (raw.includes('email not confirmed') || raw.includes('not confirmed')) {
-      return 'Seu e-mail ainda nao foi confirmado. Abra sua caixa de entrada e confirme antes de entrar.';
-    }
-
-    if (raw.includes('invalid login credentials')) {
-      return 'E-mail ou senha invalidos. Se acabou de cadastrar, confirme o e-mail antes de entrar.';
-    }
-
-    if (raw.includes('user already registered') || raw.includes('already been registered')) {
-      return 'Este e-mail ja esta cadastrado. Use a aba Entrar.';
-    }
-
-    if (flow === 'login') {
-      const detail = String(message || '').trim();
-      if (detail) {
-        return `Nao foi possivel entrar. Detalhe: ${detail}`;
-      }
-      return 'Nao foi possivel entrar. Verifique e-mail/senha e confirmacao de e-mail.';
-    }
-
-    if (flow === 'register') {
-      const detail = String(message || '').trim();
-      if (detail) {
-        return `Nao foi possivel concluir cadastro. Detalhe: ${detail}`;
-      }
-      return 'Nao foi possivel concluir cadastro agora. Tente novamente em instantes.';
-    }
-
-    return 'Erro de autenticacao.';
-  }
-
-  async function loadProfile() {
-    const data = await supa(`/rest/v1/profiles?id=eq.${currentUser.user.id}&select=*`);
-    currentProfile = data?.[0] || null;
-  }
-
   function updateHeader() {
-    const baseName = currentProfile?.nome || currentUser?.user?.email || 'Usuario';
+    const baseName = currentProfile?.nome || currentProfile?.email || 'Usuario';
     document.getElementById('header-user-name').innerHTML = `${escapeHtml(baseName)}${isAdmin ? '<span class="admin-chip">admin</span>' : ''}`;
     document.getElementById('user-avatar').textContent = baseName.charAt(0).toUpperCase();
   }
@@ -254,9 +180,10 @@
     const minhasCount = allMinhas.length;
     const geralCount = allGeral.length;
     const comTom = allGeral.filter(i => i.meuTom).length;
-    document.getElementById('stat-minhas').textContent = minhasCount;
-    document.getElementById('stat-geral').textContent = geralCount;
-    document.getElementById('stat-com-tom').textContent = comTom;
+
+    document.getElementById('stat-minhas').textContent = String(minhasCount);
+    document.getElementById('stat-geral').textContent = String(geralCount);
+    document.getElementById('stat-com-tom').textContent = String(comTom);
   }
 
   function buildTomGrid(containerId, onSelect) {
@@ -289,7 +216,7 @@
     buildTomGrid('tom-grid-salvar', t => { selectedTomSalvar = t; });
   }
 
-  async function doLogin() {
+  function doLogin() {
     const email = document.getElementById('login-email').value.trim();
     const pass = document.getElementById('login-pass').value;
     const msg = document.getElementById('login-msg');
@@ -303,19 +230,22 @@
     setBusy(btn, true, 'Entrar', 'Entrando');
 
     try {
-      const data = await supaAuth('/token?grant_type=password', { email, password: pass });
-      currentUser = data;
-      localStorage.setItem('supa_session', JSON.stringify(data));
-      await loadProfile();
+      const user = getUsers().find(u => normalize(u.email) === normalize(email) && u.password === pass);
+      if (!user) {
+        showMsg(msg, 'Email ou senha invalidos', 'error');
+        return;
+      }
+
+      currentProfile = user;
+      currentUser = { user: { id: user.id, email: user.email }, mode: 'local' };
+      saveSession(user);
       enterApp();
-    } catch (e) {
-      showMsg(msg, mapAuthError(e.message, 'login'), 'error');
     } finally {
       setBusy(btn, false, 'Entrar', 'Entrando');
     }
   }
 
-  async function doRegister() {
+  function doRegister() {
     const nome = document.getElementById('reg-nome').value.trim();
     const email = document.getElementById('reg-email').value.trim();
     const pass = document.getElementById('reg-pass').value;
@@ -330,54 +260,54 @@
     setBusy(btn, true, 'Criar conta', 'Criando');
 
     try {
-      const data = await supaAuth('/signup', { email, password: pass, data: { nome } });
-      if (data.access_token) {
-        currentUser = data;
-        localStorage.setItem('supa_session', JSON.stringify(data));
-        await loadProfile();
-        enterApp();
-      } else {
-        showMsg(msg, 'Conta criada. Confira seu e-mail para confirmar a conta e depois entre.', 'success');
-        document.getElementById('login-email').value = email;
-        switchTab('login');
+      const users = getUsers();
+      const exists = users.some(u => normalize(u.email) === normalize(email));
+      if (exists) {
+        showMsg(msg, 'Este email ja esta cadastrado. Use Entrar.', 'error');
+        return;
       }
-    } catch (e) {
-      showMsg(msg, mapAuthError(e.message, 'register'), 'error');
+
+      const created = {
+        id: uid(),
+        nome,
+        email,
+        password: pass,
+        role: 'user',
+        created_at: new Date().toISOString()
+      };
+
+      users.push(created);
+      setUsers(users);
+
+      showMsg(msg, 'Conta criada com sucesso. Faça login.', 'success');
+      document.getElementById('login-email').value = email;
+      switchTab('login');
     } finally {
       setBusy(btn, false, 'Criar conta', 'Criando');
     }
   }
 
-  async function doLogout() {
-    try {
-      await supa('/auth/v1/logout', { method: 'POST' });
-    } catch {}
-
+  function doLogout() {
     currentUser = null;
     currentProfile = null;
     allMinhas = [];
     allGeral = [];
     allAdminRecords = [];
     isAdmin = false;
-    localStorage.removeItem('supa_session');
 
+    clearSession();
     document.getElementById('app-screen').style.display = 'none';
     document.getElementById('auth-screen').style.display = 'flex';
   }
 
   function enterApp() {
-    if (!SUPA_URL || !SUPA_KEY) {
-      showToast('Config do Supabase ausente em assets/js/config.js', 'error');
-      return;
-    }
-
     document.getElementById('auth-screen').style.display = 'none';
     document.getElementById('app-screen').style.display = 'block';
 
+    updateAdminState();
     updateHeader();
     buildTomGrids();
     attachSearchHandlers();
-    updateAdminState();
     loadMinhas();
     if (isAdmin) loadAdminOverview();
   }
@@ -390,15 +320,20 @@
     if (name === 'geral') loadGeral();
   }
 
-  async function loadMinhas() {
+  function loadMinhas() {
     const el = document.getElementById('list-minhas');
     el.innerHTML = '<div class="loading-screen">Carregando...</div>';
 
     try {
-      const data = await supa(
-        `/rest/v1/ministrante_musicas?ministrante_id=eq.${currentUser.user.id}&select=*,musicas(*)&order=created_at.desc`
-      );
-      allMinhas = data || [];
+      const musicas = getMusicas();
+      const mm = getMM().filter(r => r.ministrante_id === currentProfile.id);
+
+      allMinhas = mm.map(row => ({
+        ...row,
+        musicas: musicas.find(m => m.id === row.musica_id) || null
+      })).filter(r => r.musicas);
+
+      allMinhas.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
       renderMinhas(allMinhas);
       updateStats();
     } catch {
@@ -436,27 +371,26 @@
     }).join('');
   }
 
-  async function loadGeral(showSuccess = false) {
+  function loadGeral(showSuccess = false) {
     const el = document.getElementById('list-geral');
     el.innerHTML = '<div class="loading-screen">Carregando...</div>';
 
     try {
-      const musicas = await supa('/rest/v1/musicas?select=*,profiles(nome)&order=nome.asc');
-      const minhas = await supa(`/rest/v1/ministrante_musicas?ministrante_id=eq.${currentUser.user.id}&select=musica_id,tom,observacoes`);
+      const musicas = getMusicas();
+      const mm = getMM().filter(r => r.ministrante_id === currentProfile.id);
+      const mmMap = new Map(mm.map(r => [r.musica_id, r]));
+      const users = getUsers();
 
-      const minhasMap = {};
-      (minhas || []).forEach(m => {
-        minhasMap[m.musica_id] = {
-          tom: m.tom,
-          observacoes: m.observacoes || ''
+      allGeral = musicas.map(m => {
+        const my = mmMap.get(m.id);
+        const dono = users.find(u => u.id === m.criado_por);
+        return {
+          ...m,
+          meuTom: my?.tom || null,
+          minhaObs: my?.observacoes || '',
+          profiles: { nome: dono?.nome || 'Desconhecido' }
         };
-      });
-
-      allGeral = (musicas || []).map(m => ({
-        ...m,
-        meuTom: minhasMap[m.id]?.tom || null,
-        minhaObs: minhasMap[m.id]?.observacoes || ''
-      }));
+      }).sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || '')));
 
       renderGeral(allGeral);
       updateStats();
@@ -484,20 +418,31 @@
     `).join('');
   }
 
-  async function loadAdminOverview(showSuccess = false) {
+  function loadAdminOverview(showSuccess = false) {
     if (!isAdmin) return;
 
     const el = document.getElementById('admin-list');
     if (!el) return;
-    el.innerHTML = '<div class="loading-screen">Carregando visao admin...</div>';
 
     try {
-      const rows = await supa('/rest/v1/ministrante_musicas?select=tom,observacoes,profiles(nome,email),musicas(nome)&order=created_at.desc');
-      allAdminRecords = rows || [];
+      const mm = getMM();
+      const musicas = getMusicas();
+      const users = getUsers();
+
+      allAdminRecords = mm.map(row => {
+        const musica = musicas.find(m => m.id === row.musica_id);
+        const user = users.find(u => u.id === row.ministrante_id);
+        return {
+          ...row,
+          musicas: { nome: musica?.nome || 'Sem musica' },
+          profiles: { nome: user?.nome || 'Sem nome', email: user?.email || '-' }
+        };
+      }).sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+
       renderAdminOverview();
       if (showSuccess) showToast('Painel admin atualizado', 'success');
     } catch {
-      el.innerHTML = '<div class="empty-state">Sem permissao para ver tudo ainda. Ajuste as politicas RLS para admin.</div>';
+      el.innerHTML = '<div class="empty-state">Erro ao carregar visao admin</div>';
     }
   }
 
@@ -510,22 +455,14 @@
       return;
     }
 
-    el.innerHTML = allAdminRecords.map(row => {
-      const nomeMusica = row.musicas?.nome || 'Sem musica';
-      const nomeUser = row.profiles?.nome || 'Sem nome';
-      const emailUser = row.profiles?.email || '-';
-      const tom = displayTom(row.tom);
-      const obs = row.observacoes || '-';
-
-      return `
-        <article class="admin-item">
-          <div class="admin-item-title">${escapeHtml(nomeMusica)}</div>
-          <div class="admin-item-sub"><strong>Usuario:</strong> ${escapeHtml(nomeUser)} (${escapeHtml(emailUser)})</div>
-          <div class="admin-item-sub"><strong>Tom:</strong> ${escapeHtml(tom)}</div>
-          <div class="admin-item-sub"><strong>Obs:</strong> ${escapeHtml(obs)}</div>
-        </article>
-      `;
-    }).join('');
+    el.innerHTML = allAdminRecords.map(row => `
+      <article class="admin-item">
+        <div class="admin-item-title">${escapeHtml(row.musicas?.nome || 'Sem musica')}</div>
+        <div class="admin-item-sub"><strong>Usuario:</strong> ${escapeHtml(row.profiles?.nome || 'Sem nome')} (${escapeHtml(row.profiles?.email || '-')})</div>
+        <div class="admin-item-sub"><strong>Tom:</strong> ${escapeHtml(displayTom(row.tom))}</div>
+        <div class="admin-item-sub"><strong>Obs:</strong> ${escapeHtml(row.observacoes || '-')}</div>
+      </article>
+    `).join('');
   }
 
   function attachSearchHandlers() {
@@ -575,7 +512,7 @@
 
     editingMusicaId = item.id;
     editingMusicaGlobalId = item.musica_id;
-    selectedTom = item.tom || '';
+    selectedTom = item.tom || SEM_TOM;
 
     document.getElementById('modal-minhas-title').textContent = 'Editar musica';
     document.getElementById('m-nome').value = item.musicas?.nome || '';
@@ -587,7 +524,7 @@
     document.getElementById('modal-minhas').classList.add('open');
   }
 
-  async function saveMusica() {
+  function saveMusica() {
     const nome = document.getElementById('m-nome').value.trim();
     const link = document.getElementById('m-link').value.trim();
     const obs = document.getElementById('m-obs').value.trim();
@@ -599,73 +536,88 @@
     setBusy(btn, true, 'Salvar', 'Salvando');
 
     try {
+      const tomValue = getTomOrNull(selectedTom);
+      const musicas = getMusicas();
+      const mm = getMM();
       let musicaId = editingMusicaGlobalId;
 
-      const tomValue = getTomOrNull(selectedTom);
-
       if (!editingMusicaId) {
-        const existing = await supa(`/rest/v1/musicas?nome=eq.${encodeURIComponent(nome)}&select=id`);
-        if (existing && existing.length) {
-          musicaId = existing[0].id;
+        const existingMusica = musicas.find(m => normalize(m.nome) === normalize(nome));
+        if (existingMusica) {
+          musicaId = existingMusica.id;
         } else {
-          const created = await supa('/rest/v1/musicas', {
-            method: 'POST',
-            headers: { Prefer: 'return=representation' },
-            body: JSON.stringify({ nome, link: link || null, criado_por: currentUser.user.id })
-          });
-          musicaId = created[0].id;
+          const createdMusica = {
+            id: uid(),
+            nome,
+            link: link || null,
+            criado_por: currentProfile.id,
+            created_at: new Date().toISOString()
+          };
+          musicas.push(createdMusica);
+          setMusicas(musicas);
+          musicaId = createdMusica.id;
         }
 
-        await supa('/rest/v1/ministrante_musicas', {
-          method: 'POST',
-          headers: { Prefer: 'return=minimal' },
-          body: JSON.stringify({
-            ministrante_id: currentUser.user.id,
+        const existingAssoc = mm.find(r => r.ministrante_id === currentProfile.id && r.musica_id === musicaId);
+        if (existingAssoc) {
+          existingAssoc.tom = tomValue;
+          existingAssoc.observacoes = obs || null;
+          existingAssoc.updated_at = new Date().toISOString();
+        } else {
+          mm.push({
+            id: uid(),
+            ministrante_id: currentProfile.id,
             musica_id: musicaId,
             tom: tomValue,
-            observacoes: obs || null
-          })
-        });
+            observacoes: obs || null,
+            created_at: new Date().toISOString()
+          });
+        }
+        setMM(mm);
       } else {
-        await supa(`/rest/v1/musicas?id=eq.${musicaId}`, {
-          method: 'PATCH',
-          headers: { Prefer: 'return=minimal' },
-          body: JSON.stringify({ link: link || null })
-        });
+        const musica = musicas.find(m => m.id === musicaId);
+        if (musica) {
+          musica.link = link || null;
+          musica.updated_at = new Date().toISOString();
+          setMusicas(musicas);
+        }
 
-        await supa(`/rest/v1/ministrante_musicas?id=eq.${editingMusicaId}`, {
-          method: 'PATCH',
-          headers: { Prefer: 'return=minimal' },
-          body: JSON.stringify({ tom: tomValue, observacoes: obs || null })
-        });
+        const assoc = mm.find(r => r.id === editingMusicaId);
+        if (assoc) {
+          assoc.tom = tomValue;
+          assoc.observacoes = obs || null;
+          assoc.updated_at = new Date().toISOString();
+          setMM(mm);
+        }
       }
 
       closeModalMinhas();
       showToast('Musica salva com sucesso', 'success');
-      await loadMinhas();
-      if (document.getElementById('page-geral').classList.contains('active')) await loadGeral();
-    } catch (e) {
-      if (e.message.toLowerCase().includes('unique')) {
-        showToast('Voce ja tem essa musica', 'error');
-      } else {
-        showToast('Erro ao salvar musica', 'error');
-      }
+      loadMinhas();
+      if (document.getElementById('page-geral').classList.contains('active')) loadGeral();
+      if (isAdmin) loadAdminOverview();
+    } catch {
+      showToast('Erro ao salvar musica', 'error');
     } finally {
       setBusy(btn, false, 'Salvar', 'Salvando');
     }
   }
 
-  async function deletarMinhas(e, id) {
+  function deletarMinhas(e, id) {
     e.stopPropagation();
     if (!window.confirm('Remover esta musica da sua lista?')) return;
 
-    try {
-      await supa(`/rest/v1/ministrante_musicas?id=eq.${id}`, { method: 'DELETE' });
+    const mm = getMM();
+    const idx = mm.findIndex(r => r.id === id);
+    if (idx >= 0) {
+      mm.splice(idx, 1);
+      setMM(mm);
       showToast('Musica removida', 'success');
-      await loadMinhas();
-      if (document.getElementById('page-geral').classList.contains('active')) await loadGeral();
-    } catch {
-      showToast('Erro ao remover', 'error');
+      loadMinhas();
+      if (document.getElementById('page-geral').classList.contains('active')) loadGeral();
+      if (isAdmin) loadAdminOverview();
+    } else {
+      showToast('Registro nao encontrado', 'error');
     }
   }
 
@@ -675,7 +627,9 @@
     geralSelectedMusica = item;
 
     const criadoPor = item.profiles?.nome || 'Desconhecido';
-    const link = item.link ? `<a href="${escapeAttr(item.link)}" target="_blank" rel="noopener" class="btn-ghost">Ouvir musica</a>` : '<span class="muted">Sem link cadastrado</span>';
+    const link = item.link
+      ? `<a href="${escapeAttr(item.link)}" target="_blank" rel="noopener" class="btn-ghost">Ouvir musica</a>`
+      : '<span class="muted">Sem link cadastrado</span>';
 
     document.getElementById('geral-detail-content').innerHTML = `
       <h3 class="modal-title">${escapeHtml(item.nome)}</h3>
@@ -714,7 +668,7 @@
     document.getElementById('modal-salvar-tom').classList.remove('open');
   }
 
-  async function confirmarSalvarTom() {
+  function confirmarSalvarTom() {
     const obs = document.getElementById('salvar-obs').value.trim();
     const btn = document.getElementById('btn-salvar-tom');
     setBusy(btn, true, 'Salvar', 'Salvando');
@@ -722,29 +676,30 @@
     try {
       const item = geralSelectedMusica;
       const tomValue = getTomOrNull(selectedTomSalvar);
-      if (item.meuTom) {
-        await supa(`/rest/v1/ministrante_musicas?ministrante_id=eq.${currentUser.user.id}&musica_id=eq.${item.id}`, {
-          method: 'PATCH',
-          headers: { Prefer: 'return=minimal' },
-          body: JSON.stringify({ tom: tomValue, observacoes: obs || null })
-        });
+      const mm = getMM();
+
+      const assoc = mm.find(r => r.ministrante_id === currentProfile.id && r.musica_id === item.id);
+      if (assoc) {
+        assoc.tom = tomValue;
+        assoc.observacoes = obs || null;
+        assoc.updated_at = new Date().toISOString();
       } else {
-        await supa('/rest/v1/ministrante_musicas', {
-          method: 'POST',
-          headers: { Prefer: 'return=minimal' },
-          body: JSON.stringify({
-            ministrante_id: currentUser.user.id,
-            musica_id: item.id,
-            tom: tomValue,
-            observacoes: obs || null
-          })
+        mm.push({
+          id: uid(),
+          ministrante_id: currentProfile.id,
+          musica_id: item.id,
+          tom: tomValue,
+          observacoes: obs || null,
+          created_at: new Date().toISOString()
         });
       }
 
+      setMM(mm);
       closeModalSalvarTom();
       showToast('Tom salvo com sucesso', 'success');
-      await loadGeral();
-      await loadMinhas();
+      loadGeral();
+      loadMinhas();
+      if (isAdmin) loadAdminOverview();
     } catch {
       showToast('Erro ao salvar tom', 'error');
     } finally {
@@ -767,7 +722,7 @@
     allMinhas.forEach(item => {
       rows.push([
         item.musicas?.nome || '',
-        item.tom || '',
+        displayTom(item.tom),
         item.musicas?.link || '',
         item.observacoes || ''
       ]);
@@ -809,7 +764,7 @@
     document.getElementById('modal-admin-user').classList.remove('open');
   }
 
-  async function adminCreateUser() {
+  function adminCreateUser() {
     if (!isAdmin) return showToast('Somente admin pode cadastrar usuario', 'error');
 
     const nome = document.getElementById('admin-user-name').value.trim();
@@ -820,22 +775,24 @@
       return showToast('Informe nome, email valido e senha minima de 6 chars', 'error');
     }
 
-    const btn = document.getElementById('btn-admin-create-user');
-    setBusy(btn, true, 'Cadastrar', 'Cadastrando');
-
-    try {
-      await invokeEdgeFunction('admin-create-user', {
-        nome,
-        email,
-        password: pass
-      });
-      showToast('Usuario cadastrado com sucesso pelo admin.', 'success');
-      closeAdminCreateUserModal();
-    } catch (e) {
-      showToast(mapAuthError(e.message, 'register'), 'error');
-    } finally {
-      setBusy(btn, false, 'Cadastrar', 'Cadastrando');
+    const users = getUsers();
+    const exists = users.some(u => normalize(u.email) === normalize(email));
+    if (exists) {
+      return showToast('Este email ja esta cadastrado', 'error');
     }
+
+    users.push({
+      id: uid(),
+      nome,
+      email,
+      password: pass,
+      role: 'user',
+      created_at: new Date().toISOString()
+    });
+
+    setUsers(users);
+    showToast('Usuario cadastrado com sucesso (modo local).', 'success');
+    closeAdminCreateUserModal();
   }
 
   function bindModalClose() {
@@ -865,20 +822,17 @@
     window.addEventListener('offline', sync);
   }
 
-  async function checkSession() {
-    const stored = localStorage.getItem('supa_session');
-    if (!stored) return;
+  function checkSession() {
+    const user = getSessionUser();
+    if (!user) return;
 
-    try {
-      currentUser = JSON.parse(stored);
-      await loadProfile();
-      enterApp();
-    } catch {
-      localStorage.removeItem('supa_session');
-    }
+    currentProfile = user;
+    currentUser = { user: { id: user.id, email: user.email }, mode: 'local' };
+    enterApp();
   }
 
   function bootstrap() {
+    ensureSeedData();
     bindModalClose();
     bindNetworkBadge();
     checkSession();
