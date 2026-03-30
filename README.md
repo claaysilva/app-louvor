@@ -6,9 +6,11 @@ Aplicativo web para ministerio de louvor em modo local (autenticacao e dados no 
 
 - index.html: estrutura da interface
 - assets/css/styles.css: estilos
-- assets/js/app.js: logica de negocio e autenticacao local
+- assets/js/config.js: configuracao de conexao com banco (Supabase)
+- assets/js/app.js: logica de negocio e sincronizacao de dados
 - manifest.webmanifest: metadados PWA
 - service-worker.js: cache offline
+- DATABASE_SCHEMA.sql: tabelas e colunas necessarias no banco
 
 ## Funcionalidades
 
@@ -44,9 +46,24 @@ Hospedavel como arquivo estatico (ex.: Vercel).
 - Tratamento padronizado de erros locais
 - Ferramenta admin para mesclar musicas duplicadas
 
+## Banco de dados (obrigatorio para persistencia central)
+
+1. Execute o arquivo DATABASE_SCHEMA.sql no SQL Editor do Supabase.
+2. Preencha assets/js/config.js com:
+	- SUPA_URL
+	- SUPA_KEY
+3. Sem essa configuracao, o app cai para cache local temporario no navegador.
+
+Tabelas/colunas criadas:
+- profiles (id, nome, email, password, role, created_at)
+- musicas (id, nome, link, criado_por, created_at, updated_at)
+- ministrante_musicas (id, ministrante_id, musica_id, tom, observacoes, created_at, updated_at)
+- cultos (id, title, date, reminder_at, created_by, created_at, updated_at, items jsonb)
+- auditoria (id, action, details, target_type, target_id, user_id, user_email, created_at)
+
 ## Observacao importante
 
-No modo atual, usuarios e senhas ficam no localStorage do navegador (apenas para uso temporario/local).
+Com banco configurado, os dados sao sincronizados no Supabase e mantidos no localStorage apenas como cache.
 
 ## Escopo por fases
 

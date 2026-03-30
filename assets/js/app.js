@@ -12,6 +12,11 @@
   const LS_HISTORY = 'louvor_history';
   const DATA_KEYS = [LS_USERS, LS_SESSION, LS_MUSICAS, LS_MM, LS_SETLISTS, LS_HISTORY];
 
+  const cfg = window.APP_CONFIG || {};
+  const SUPA_URL = (cfg.SUPA_URL || '').trim();
+  const SUPA_KEY = (cfg.SUPA_KEY || '').trim();
+  const DB_ENABLED = Boolean(SUPA_URL && SUPA_KEY);
+
   const GERAL_PER_PAGE = 8;
 
   let currentUser = null;
@@ -39,6 +44,8 @@
 
   let confirmResolver = null;
   let deferredPrompt = null;
+  let dbSyncQueue = Promise.resolve();
+  let dbHydrating = false;
 
   function uid() {
     return Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -55,6 +62,82 @@
 
   function writeJson(key, value) {
     localStorage.setItem(key, JSON.stringify(value));
+  }
+
+  function queueDbSync(task) {
+    if (!DB_ENABLED || dbHydrating) return;
+    dbSyncQueue = dbSyncQueue.then(task).catch(() => {
+      showToast('Falha ao sincronizar com o banco', 'error');
+    });
+  }
+
+  async function dbRequest(path, options) {
+    if (!DB_ENABLED) return null;
+    const headers = {
+      apikey: SUPA_KEY,
+      Authorization: `Bearer ${SUPA_KEY}`,
+      'Content-Type': 'application/json',
+      ...(options?.headers || {})
+    };
+
+    const res = await fetch(`${SUPA_URL}${path}`, { ...options, headers });
+    if (!res.ok) {
+      const txt = await res.text();
+      throw new Error(txt || `Erro DB ${res.status}`);
+    }
+
+    const txt = await res.text();
+    return txt ? JSON.parse(txt) : null;
+  }
+
+  async function dbSelect(table, select) {
+    const query = encodeURIComponent(select || '*');
+    return dbRequest(`/rest/v1/${table}?select=${query}`, { method: 'GET' });
+  }
+
+  async function dbReplaceAll(table, rows) {
+    await dbRequest(`/rest/v1/${table}?id=neq.__none__`, {
+      method: 'DELETE',
+      headers: { Prefer: 'return=minimal' }
+    });
+
+    if (!rows.length) return;
+
+    await dbRequest(`/rest/v1/${table}`, {
+      method: 'POST',
+      headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify(rows)
+    });
+  }
+
+  async function hydrateFromDatabase() {
+    if (!DB_ENABLED) return;
+
+    dbHydrating = true;
+    try {
+      const [profiles, musicas, mm, cultos, auditoria] = await Promise.all([
+        dbSelect('profiles', '*'),
+        dbSelect('musicas', '*'),
+        dbSelect('ministrante_musicas', '*'),
+        dbSelect('cultos', '*'),
+        dbSelect('auditoria', '*')
+      ]);
+
+      if (Array.isArray(profiles)) writeJson(LS_USERS, profiles);
+      if (Array.isArray(musicas)) writeJson(LS_MUSICAS, musicas);
+      if (Array.isArray(mm)) writeJson(LS_MM, mm);
+      if (Array.isArray(cultos)) {
+        const mapped = cultos.map((c) => ({
+          ...c,
+          reminderAt: c.reminder_at || null,
+          items: Array.isArray(c.items) ? c.items : []
+        }));
+        writeJson(LS_SETLISTS, mapped);
+      }
+      if (Array.isArray(auditoria)) writeJson(LS_HISTORY, auditoria);
+    } finally {
+      dbHydrating = false;
+    }
   }
 
   function normalize(value) {
@@ -242,6 +325,9 @@
 
   function setUsers(users) {
     writeJson(LS_USERS, users);
+    queueDbSync(async () => {
+      await dbReplaceAll('profiles', users);
+    });
   }
 
   function getMusicas() {
@@ -250,6 +336,9 @@
 
   function setMusicas(musicas) {
     writeJson(LS_MUSICAS, musicas);
+    queueDbSync(async () => {
+      await dbReplaceAll('musicas', musicas);
+    });
   }
 
   function getMM() {
@@ -258,6 +347,9 @@
 
   function setMM(mm) {
     writeJson(LS_MM, mm);
+    queueDbSync(async () => {
+      await dbReplaceAll('ministrante_musicas', mm);
+    });
   }
 
   function getSetlists() {
@@ -266,6 +358,19 @@
 
   function setSetlists(setlists) {
     writeJson(LS_SETLISTS, setlists);
+    queueDbSync(async () => {
+      const mapped = setlists.map((s) => ({
+        id: s.id,
+        title: s.title,
+        date: s.date,
+        reminder_at: s.reminderAt || null,
+        created_by: s.created_by || null,
+        created_at: s.created_at || new Date().toISOString(),
+        updated_at: s.updated_at || null,
+        items: Array.isArray(s.items) ? s.items : []
+      }));
+      await dbReplaceAll('cultos', mapped);
+    });
   }
 
   function getHistory() {
@@ -274,6 +379,9 @@
 
   function setHistory(list) {
     writeJson(LS_HISTORY, list);
+    queueDbSync(async () => {
+      await dbReplaceAll('auditoria', list);
+    });
   }
 
   function logHistory(action, details, targetType, targetId) {
@@ -1840,11 +1948,11 @@
         throw appError('E500', 'Backup incompleto ou corrompido');
       }
 
-      writeJson(LS_USERS, parsed.data[LS_USERS]);
-      writeJson(LS_MUSICAS, parsed.data[LS_MUSICAS]);
-      writeJson(LS_MM, parsed.data[LS_MM]);
-      writeJson(LS_SETLISTS, parsed.data[LS_SETLISTS]);
-      writeJson(LS_HISTORY, parsed.data[LS_HISTORY]);
+      setUsers(parsed.data[LS_USERS]);
+      setMusicas(parsed.data[LS_MUSICAS]);
+      setMM(parsed.data[LS_MM]);
+      setSetlists(parsed.data[LS_SETLISTS]);
+      setHistory(parsed.data[LS_HISTORY]);
 
       const currentEmail = currentProfile?.email;
       if (currentEmail) {
@@ -1911,14 +2019,27 @@
     return String(v).replaceAll('"', '&quot;').replaceAll("'", '&#39;');
   }
 
-  function bootstrap() {
-    ensureSeedData();
+  async function bootstrap() {
     bindModalClose();
     bindNetworkBadge();
     registerPwa();
     bindBackupInput();
     bindMusicNameSuggestionHint();
+
+    if (DB_ENABLED) {
+      try {
+        await hydrateFromDatabase();
+      } catch {
+        showToast('Nao foi possivel carregar do banco. Usando cache local.', 'error');
+      }
+    }
+
+    ensureSeedData();
     checkSession();
+
+    if (!DB_ENABLED) {
+      showToast('Banco nao configurado. Defina SUPA_URL e SUPA_KEY no config.js', 'error');
+    }
   }
 
   Object.assign(window, {
