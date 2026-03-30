@@ -67,6 +67,7 @@
         <div id="header-user-name" class="header-user-name"></div>
       </div>
       <div class="header-user">
+        <button id="btn-admin-create" class="btn-ghost hidden" onclick="openAdminCreateUserModal()" title="Cadastrar usuario">Novo usuario</button>
         <div class="user-avatar" id="user-avatar">?</div>
         <button class="btn-icon" onclick="doLogout()" title="Sair">Sair</button>
       </div>
@@ -102,6 +103,15 @@
       </div>
 
       <div id="list-minhas"></div>
+
+      <section id="admin-panel" class="admin-panel hidden">
+        <div class="section-header admin-header">
+          <h3 class="section-title admin-title">Painel Admin</h3>
+          <button class="btn-ghost" onclick="loadAdminOverview(true)">Atualizar tudo</button>
+        </div>
+        <p class="admin-help">Visao completa de todos os registros de ministrantes e tons.</p>
+        <div id="admin-list"></div>
+      </section>
     </main>
 
     <main id="page-geral" class="page">
@@ -142,7 +152,7 @@
       </div>
 
       <div class="field-group">
-        <label class="field-label-dark">Meu tom *</label>
+        <label class="field-label-dark">Meu tom</label>
         <div id="tom-grid" class="tom-grid"></div>
       </div>
 
@@ -173,7 +183,7 @@
       <p id="salvar-tom-nome" class="muted"></p>
 
       <div class="field-group">
-        <label class="field-label-dark">Meu tom *</label>
+        <label class="field-label-dark">Meu tom</label>
         <div id="tom-grid-salvar" class="tom-grid"></div>
       </div>
 
@@ -190,6 +200,34 @@
   </div>
 
   <div id="toast" class="toast"></div>
+
+  <div id="modal-admin-user" class="modal-overlay">
+    <div class="modal">
+      <div class="modal-handle"></div>
+      <h3 class="modal-title">Cadastrar usuario</h3>
+      <p class="muted">Somente administrador</p>
+
+      <div class="field-group">
+        <label class="field-label-dark">Nome *</label>
+        <input id="admin-user-name" type="text" class="field-input" placeholder="Nome do usuario" />
+      </div>
+
+      <div class="field-group">
+        <label class="field-label-dark">E-mail *</label>
+        <input id="admin-user-email" type="email" class="field-input" placeholder="email@dominio.com" />
+      </div>
+
+      <div class="field-group">
+        <label class="field-label-dark">Senha *</label>
+        <input id="admin-user-pass" type="password" class="field-input" placeholder="Minimo 6 caracteres" />
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn-cancel" onclick="closeAdminCreateUserModal()">Cancelar</button>
+        <button id="btn-admin-create-user" class="btn-save" onclick="adminCreateUser()">Cadastrar</button>
+      </div>
+    </div>
+  </div>
 
   <script src="assets/js/config.js"></script>
   <script src="assets/js/app.js" defer></script>

@@ -189,6 +189,20 @@ body {
   opacity: .85;
 }
 
+.admin-chip {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  background: rgba(255, 224, 167, .25);
+  color: #ffe0a7;
+  border: 1px solid rgba(255, 224, 167, .45);
+}
+
 .header-user { display: flex; align-items: center; gap: 8px; }
 
 .user-avatar {
@@ -319,6 +333,51 @@ body {
   background: rgba(255,255,255,.85);
   padding: 30px 12px;
   color: var(--text-muted);
+}
+
+.admin-panel {
+  margin-top: 14px;
+  border-top: 1px dashed var(--border);
+  padding-top: 14px;
+}
+
+.admin-header {
+  margin-bottom: 6px;
+}
+
+.admin-title {
+  font-size: 22px;
+}
+
+.admin-help {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-bottom: 10px;
+}
+
+.admin-item {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px;
+  margin-bottom: 8px;
+}
+
+.admin-item-title {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.admin-item-sub {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.tom-badge.none {
+  background: #f3f3f3;
+  color: #777;
+  border-color: #dfdfdf;
 }
 
 .loading-screen {
