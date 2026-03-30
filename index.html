@@ -4,6 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
   <title>App Louvor</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <meta name="theme-color" content="#5c3d1e" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -67,6 +69,7 @@
         <div id="header-user-name" class="header-user-name"></div>
       </div>
       <div class="header-user">
+        <button id="btn-install" class="btn-ghost hidden" title="Instalar app">Instalar</button>
         <button id="btn-admin-create" class="btn-ghost hidden" onclick="openAdminCreateUserModal()" title="Cadastrar usuario">Novo usuario</button>
         <div class="user-avatar" id="user-avatar">?</div>
         <button class="btn-icon" onclick="doLogout()" title="Sair">Sair</button>
@@ -107,7 +110,10 @@
       <section id="admin-panel" class="admin-panel hidden">
         <div class="section-header admin-header">
           <h3 class="section-title admin-title">Painel Admin</h3>
-          <button class="btn-ghost" onclick="loadAdminOverview(true)">Atualizar tudo</button>
+          <div class="section-actions">
+            <button class="btn-ghost" onclick="mergeDuplicateSongs()">Mesclar duplicadas</button>
+            <button class="btn-ghost" onclick="loadAdminOverview(true)">Atualizar tudo</button>
+          </div>
         </div>
         <p class="admin-help">Visao completa de todos os registros de ministrantes e tons.</p>
         <div id="admin-list"></div>
@@ -127,12 +133,52 @@
         <input id="search-geral" type="text" placeholder="Buscar na lista geral" />
       </div>
 
+      <div class="toolbar-row">
+        <select id="filter-tom-geral" class="field-input compact">
+          <option value="">Todos os tons</option>
+        </select>
+        <select id="sort-geral" class="field-input compact">
+          <option value="nome_asc">Nome A-Z</option>
+          <option value="nome_desc">Nome Z-A</option>
+          <option value="recente">Mais recentes</option>
+          <option value="com_tom">Com tom primeiro</option>
+        </select>
+      </div>
+
       <div id="list-geral"></div>
+
+      <div id="geral-pagination" class="pagination hidden">
+        <button id="geral-prev" class="btn-ghost">Anterior</button>
+        <span id="geral-page-indicator" class="muted small"></span>
+        <button id="geral-next" class="btn-ghost">Proximo</button>
+      </div>
+    </main>
+
+    <main id="page-setlists" class="page">
+      <div class="section-header">
+        <h2 class="section-title">Setlists</h2>
+        <div class="section-actions">
+          <button class="btn-add" onclick="openSetlistModal()">Novo culto</button>
+        </div>
+      </div>
+      <div id="setlist-list"></div>
+    </main>
+
+    <main id="page-historico" class="page">
+      <div class="section-header">
+        <h2 class="section-title">Historico</h2>
+        <div class="section-actions">
+          <button class="btn-ghost" onclick="clearMyHistory()">Limpar meu historico</button>
+        </div>
+      </div>
+      <div id="history-list"></div>
     </main>
 
     <nav class="nav-tabs">
       <button class="nav-tab active" onclick="showPage('minhas')">Minhas</button>
       <button class="nav-tab" onclick="showPage('geral')">Geral</button>
+      <button class="nav-tab" onclick="showPage('setlists')">Setlists</button>
+      <button class="nav-tab" onclick="showPage('historico')">Historico</button>
     </nav>
   </div>
 
@@ -226,6 +272,58 @@
         <button class="btn-cancel" onclick="closeAdminCreateUserModal()">Cancelar</button>
         <button id="btn-admin-create-user" class="btn-save" onclick="adminCreateUser()">Cadastrar</button>
       </div>
+    </div>
+  </div>
+
+  <div id="modal-confirm" class="modal-overlay">
+    <div class="modal">
+      <div class="modal-handle"></div>
+      <h3 id="confirm-title" class="modal-title">Confirmar</h3>
+      <p id="confirm-msg" class="muted">Tem certeza?</p>
+      <div class="modal-actions">
+        <button class="btn-cancel" onclick="closeConfirmModal(false)">Cancelar</button>
+        <button class="btn-save" onclick="closeConfirmModal(true)">Confirmar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-setlist" class="modal-overlay">
+    <div class="modal">
+      <div class="modal-handle"></div>
+      <h3 id="setlist-modal-title" class="modal-title">Novo culto</h3>
+      <div class="field-group">
+        <label class="field-label-dark">Nome do culto *</label>
+        <input id="setlist-title" type="text" class="field-input" placeholder="Ex: Domingo Noite" />
+      </div>
+      <div class="field-group">
+        <label class="field-label-dark">Data *</label>
+        <input id="setlist-date" type="date" class="field-input" />
+      </div>
+      <div class="field-group">
+        <label class="field-label-dark">Hora do lembrete</label>
+        <input id="setlist-reminder" type="datetime-local" class="field-input" />
+      </div>
+      <div class="modal-actions">
+        <button class="btn-cancel" onclick="closeSetlistModal()">Cancelar</button>
+        <button class="btn-save" onclick="saveSetlist()">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-setlist-detail" class="modal-overlay">
+    <div class="modal">
+      <div class="modal-handle"></div>
+      <h3 id="setlist-detail-title" class="modal-title">Detalhes do culto</h3>
+      <div class="field-group">
+        <label class="field-label-dark">Adicionar musica</label>
+        <select id="setlist-song-picker" class="field-input"></select>
+      </div>
+      <div class="modal-actions">
+        <button class="btn-ghost" onclick="addSongToSetlist()">Adicionar musica</button>
+        <button class="btn-ghost" onclick="exportSetlistPdf()">Exportar PDF</button>
+        <button class="btn-cancel" onclick="closeSetlistDetailModal()">Fechar</button>
+      </div>
+      <div id="setlist-song-list"></div>
     </div>
   </div>
 

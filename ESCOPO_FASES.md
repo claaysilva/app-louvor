@@ -51,11 +51,11 @@ Checklist de testes da fase:
 - Busca funcionando em Minhas e Geral
 - Exportacao CSV gerando arquivo valido
 
-## Fase 2 - Hardening e qualidade (Proxima)
+## Fase 2 - Hardening e qualidade
 
-Status: Planejada
+Status: Concluida
 
-Entregas propostas:
+Entregas:
 - Paginação na lista geral
 - Skeleton/loading states mais ricos
 - Confirmacao custom de exclusao (substituir confirm nativo)
@@ -71,9 +71,9 @@ Checklist de testes da fase:
 
 ## Fase 3 - Dados e regras avancadas
 
-Status: Planejada
+Status: Concluida
 
-Entregas propostas:
+Entregas:
 - Filtro por tom
 - Ordenacao configuravel (nome, data, com tom)
 - Edicao de nome de musica com fluxo seguro para evitar duplicatas
@@ -87,9 +87,9 @@ Checklist de testes da fase:
 
 ## Fase 4 - Operacao de culto
 
-Status: Planejada
+Status: Concluida
 
-Entregas propostas:
+Entregas:
 - Cadastro de setlist por culto (data + dia)
 - Associacao de musicas ao culto
 - Historico de louvores por culto
@@ -103,9 +103,9 @@ Checklist de testes da fase:
 
 ## Fase 5 - Admin e governanca
 
-Status: Planejada
+Status: Concluida
 
-Entregas propostas:
+Entregas:
 - Painel admin para usuarios e musicas
 - Permissoes por perfil (admin x ministrante)
 - Auditoria de acoes criticas
@@ -118,13 +118,13 @@ Checklist de testes da fase:
 
 ## Fase 6 - Produto expandido
 
-Status: Planejada
+Status: Parcialmente concluida
 
-Entregas propostas:
+Entregas implementadas:
 - PWA instalavel
 - Cache offline de leitura
 - Exportacao PDF de setlist
-- Notificacoes de lembretes de culto
+- Notificacoes de lembretes de culto (browser, com aba ativa)
 
 Checklist de testes da fase:
 - Instalacao PWA em Android e iOS

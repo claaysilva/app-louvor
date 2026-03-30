@@ -1,0 +1,10 @@
+{
+  "name": "App Louvor",
+  "short_name": "Louvor",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#faf7f2",
+  "theme_color": "#5c3d1e",
+  "lang": "pt-BR",
+  "description": "Aplicativo local para gestão de músicas e setlists de louvor"
+}

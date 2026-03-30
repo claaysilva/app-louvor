@@ -262,6 +262,25 @@ body {
   cursor: pointer;
 }
 
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
+
+.toolbar-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.field-input.compact {
+  padding: 10px 12px;
+  font-size: 14px;
+}
+
 .search-bar { position: relative; margin-bottom: 10px; }
 
 .search-bar input {
@@ -386,6 +405,65 @@ body {
   color: var(--text-muted);
 }
 
+.loading-screen.skeleton {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: linear-gradient(110deg, #f6f0e7 8%, #fff7ec 18%, #f6f0e7 33%);
+  background-size: 200% 100%;
+  animation: pulse 1.3s linear infinite;
+  min-height: 54px;
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.small {
+  margin-bottom: 0;
+}
+
+.setlist-card,
+.history-item {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 12px;
+  margin-bottom: 8px;
+  box-shadow: 0 3px 10px var(--shadow);
+}
+
+.setlist-title,
+.history-title {
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.setlist-sub,
+.history-sub {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.setlist-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.setlist-song-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+}
+
 .nav-tabs {
   position: fixed;
   left: 50%;
@@ -396,7 +474,7 @@ body {
   background: #fff;
   border-top: 1px solid var(--border);
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(4, 1fr);
   z-index: 300;
 }
 
@@ -521,3 +599,9 @@ body {
 }
 
 @keyframes spin { to { transform: rotate(360deg); } }
+
+@keyframes pulse {
+  to {
+    background-position-x: -200%;
+  }
+}

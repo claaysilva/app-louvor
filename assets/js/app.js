@@ -2,25 +2,41 @@
   const ADMIN_EMAIL = 'claytonpetry1@gmail.com';
   const ADMIN_PASSWORD = '123456';
   const SEM_TOM = 'Sem tom';
-
   const TONS = [SEM_TOM, 'Do', 'Do#', 'Re', 'Re#', 'Mi', 'Fa', 'Fa#', 'Sol', 'Sol#', 'La', 'La#', 'Si'];
 
   const LS_USERS = 'louvor_users';
   const LS_SESSION = 'louvor_session';
   const LS_MUSICAS = 'louvor_musicas';
   const LS_MM = 'louvor_ministrante_musicas';
+  const LS_SETLISTS = 'louvor_setlists';
+  const LS_HISTORY = 'louvor_history';
+
+  const GERAL_PER_PAGE = 8;
 
   let currentUser = null;
   let currentProfile = null;
+  let isAdmin = false;
+
   let allMinhas = [];
   let allGeral = [];
   let allAdminRecords = [];
-  let selectedTom = '';
-  let selectedTomSalvar = '';
+
+  let geralFiltered = [];
+  let geralPage = 1;
+  let geralFilterTom = '';
+  let geralSort = 'nome_asc';
+
+  let selectedTom = SEM_TOM;
+  let selectedTomSalvar = SEM_TOM;
   let editingMusicaId = null;
   let editingMusicaGlobalId = null;
   let geralSelectedMusica = null;
-  let isAdmin = false;
+
+  let editingSetlistId = null;
+  let selectedSetlistId = null;
+
+  let confirmResolver = null;
+  let deferredPrompt = null;
 
   function uid() {
     return Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -61,6 +77,51 @@
     }
   }
 
+  function appError(code, message) {
+    const e = new Error(message);
+    e.code = code;
+    return e;
+  }
+
+  function messageForError(error) {
+    const map = {
+      E401: 'Sessao invalida. Faça login novamente.',
+      E409: 'Conflito de dados: item duplicado.',
+      E404: 'Registro nao encontrado.',
+      E500: 'Erro inesperado. Tente novamente.'
+    };
+    if (!error) return map.E500;
+    if (error.code && map[error.code]) return map[error.code];
+    return error.message || map.E500;
+  }
+
+  function showToast(msg, type) {
+    const t = document.getElementById('toast');
+    if (!t) return;
+    t.textContent = msg;
+    t.className = `toast show ${type || ''}`;
+    setTimeout(() => t.classList.remove('show'), 2800);
+  }
+
+  function showMsg(el, text, type) {
+    el.style.display = 'block';
+    el.className = `auth-msg ${type}`;
+    el.textContent = text;
+  }
+
+  function setBusy(btn, busy, labelIdle, labelBusy) {
+    btn.disabled = busy;
+    btn.innerHTML = busy ? `<span class="spinner"></span>${labelBusy}` : labelIdle;
+  }
+
+  function getTomOrNull(value) {
+    return !value || value === SEM_TOM ? null : value;
+  }
+
+  function displayTom(value) {
+    return value || SEM_TOM;
+  }
+
   function getUsers() {
     return readJson(LS_USERS, []);
   }
@@ -85,10 +146,40 @@
     writeJson(LS_MM, mm);
   }
 
+  function getSetlists() {
+    return readJson(LS_SETLISTS, []);
+  }
+
+  function setSetlists(setlists) {
+    writeJson(LS_SETLISTS, setlists);
+  }
+
+  function getHistory() {
+    return readJson(LS_HISTORY, []);
+  }
+
+  function setHistory(list) {
+    writeJson(LS_HISTORY, list);
+  }
+
+  function logHistory(action, details, targetType, targetId) {
+    const list = getHistory();
+    list.unshift({
+      id: uid(),
+      action,
+      details,
+      targetType,
+      targetId,
+      userId: currentProfile?.id || null,
+      userEmail: currentProfile?.email || '-',
+      created_at: new Date().toISOString()
+    });
+    setHistory(list.slice(0, 800));
+  }
+
   function ensureSeedData() {
     const users = getUsers();
-    const hasAdmin = users.some(u => normalize(u.email) === normalize(ADMIN_EMAIL));
-
+    const hasAdmin = users.some((u) => normalize(u.email) === normalize(ADMIN_EMAIL));
     if (!hasAdmin) {
       users.push({
         id: uid(),
@@ -103,6 +194,8 @@
 
     if (!localStorage.getItem(LS_MUSICAS)) setMusicas([]);
     if (!localStorage.getItem(LS_MM)) setMM([]);
+    if (!localStorage.getItem(LS_SETLISTS)) setSetlists([]);
+    if (!localStorage.getItem(LS_HISTORY)) setHistory([]);
   }
 
   function saveSession(user) {
@@ -116,47 +209,7 @@
   function getSessionUser() {
     const sess = readJson(LS_SESSION, null);
     if (!sess?.userId) return null;
-    return getUsers().find(u => u.id === sess.userId) || null;
-  }
-
-  function switchTab(tab) {
-    const login = tab === 'login';
-    document.querySelectorAll('.auth-tab')[0].classList.toggle('active', login);
-    document.querySelectorAll('.auth-tab')[1].classList.toggle('active', !login);
-    document.getElementById('form-login').classList.toggle('hidden', !login);
-    document.getElementById('form-register').classList.toggle('hidden', login);
-  }
-
-  function togglePass(id) {
-    const input = document.getElementById(id);
-    input.type = input.type === 'password' ? 'text' : 'password';
-  }
-
-  function showMsg(el, text, type) {
-    el.style.display = 'block';
-    el.className = `auth-msg ${type}`;
-    el.textContent = text;
-  }
-
-  function showToast(msg, type = '') {
-    const t = document.getElementById('toast');
-    t.textContent = msg;
-    t.className = `toast show ${type}`;
-    setTimeout(() => t.classList.remove('show'), 2800);
-  }
-
-  function setBusy(btn, busy, labelIdle, labelBusy) {
-    btn.disabled = busy;
-    btn.innerHTML = busy ? `<span class="spinner"></span>${labelBusy}` : labelIdle;
-  }
-
-  function getTomOrNull(value) {
-    if (!value || value === SEM_TOM) return null;
-    return value;
-  }
-
-  function displayTom(value) {
-    return value || SEM_TOM;
+    return getUsers().find((u) => u.id === sess.userId) || null;
   }
 
   function updateAdminState() {
@@ -172,48 +225,36 @@
 
   function updateHeader() {
     const baseName = currentProfile?.nome || currentProfile?.email || 'Usuario';
-    document.getElementById('header-user-name').innerHTML = `${escapeHtml(baseName)}${isAdmin ? '<span class="admin-chip">admin</span>' : ''}`;
-    document.getElementById('user-avatar').textContent = baseName.charAt(0).toUpperCase();
+    const nameEl = document.getElementById('header-user-name');
+    const avatar = document.getElementById('user-avatar');
+    if (nameEl) {
+      nameEl.innerHTML = `${escapeHtml(baseName)}${isAdmin ? '<span class="admin-chip">admin</span>' : ''}`;
+    }
+    if (avatar) {
+      avatar.textContent = baseName.charAt(0).toUpperCase();
+    }
   }
 
   function updateStats() {
     const minhasCount = allMinhas.length;
     const geralCount = allGeral.length;
-    const comTom = allGeral.filter(i => i.meuTom).length;
-
+    const comTom = allGeral.filter((i) => i.meuTom).length;
     document.getElementById('stat-minhas').textContent = String(minhasCount);
     document.getElementById('stat-geral').textContent = String(geralCount);
     document.getElementById('stat-com-tom').textContent = String(comTom);
   }
 
-  function buildTomGrid(containerId, onSelect) {
-    const grid = document.getElementById(containerId);
-    grid.innerHTML = '';
-    TONS.forEach(tom => {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'tom-btn';
-      btn.textContent = tom;
-      btn.onclick = () => {
-        grid.querySelectorAll('.tom-btn').forEach(b => b.classList.remove('selected'));
-        btn.classList.add('selected');
-        onSelect(tom);
-      };
-      grid.appendChild(btn);
-    });
+  function switchTab(tab) {
+    const login = tab === 'login';
+    document.querySelectorAll('.auth-tab')[0].classList.toggle('active', login);
+    document.querySelectorAll('.auth-tab')[1].classList.toggle('active', !login);
+    document.getElementById('form-login').classList.toggle('hidden', !login);
+    document.getElementById('form-register').classList.toggle('hidden', login);
   }
 
-  function setTomGrid(containerId, tom, onSelect) {
-    const grid = document.getElementById(containerId);
-    grid.querySelectorAll('.tom-btn').forEach(btn => {
-      btn.classList.toggle('selected', btn.textContent === tom);
-    });
-    if (tom && onSelect) onSelect(tom);
-  }
-
-  function buildTomGrids() {
-    buildTomGrid('tom-grid', t => { selectedTom = t; });
-    buildTomGrid('tom-grid-salvar', t => { selectedTomSalvar = t; });
+  function togglePass(id) {
+    const input = document.getElementById(id);
+    input.type = input.type === 'password' ? 'text' : 'password';
   }
 
   function doLogin() {
@@ -228,18 +269,16 @@
     }
 
     setBusy(btn, true, 'Entrar', 'Entrando');
-
     try {
-      const user = getUsers().find(u => normalize(u.email) === normalize(email) && u.password === pass);
-      if (!user) {
-        showMsg(msg, 'Email ou senha invalidos', 'error');
-        return;
-      }
+      const user = getUsers().find((u) => normalize(u.email) === normalize(email) && u.password === pass);
+      if (!user) throw appError('E401', 'Email ou senha invalidos');
 
       currentProfile = user;
       currentUser = { user: { id: user.id, email: user.email }, mode: 'local' };
       saveSession(user);
       enterApp();
+    } catch (error) {
+      showMsg(msg, messageForError(error), 'error');
     } finally {
       setBusy(btn, false, 'Entrar', 'Entrando');
     }
@@ -258,14 +297,10 @@
     }
 
     setBusy(btn, true, 'Criar conta', 'Criando');
-
     try {
       const users = getUsers();
-      const exists = users.some(u => normalize(u.email) === normalize(email));
-      if (exists) {
-        showMsg(msg, 'Este email ja esta cadastrado. Use Entrar.', 'error');
-        return;
-      }
+      const exists = users.some((u) => normalize(u.email) === normalize(email));
+      if (exists) throw appError('E409', 'Este email ja esta cadastrado. Use Entrar.');
 
       const created = {
         id: uid(),
@@ -278,10 +313,13 @@
 
       users.push(created);
       setUsers(users);
+      logHistory('user_created', `Usuario criado: ${email}`, 'user', created.id);
 
       showMsg(msg, 'Conta criada com sucesso. Faça login.', 'success');
       document.getElementById('login-email').value = email;
       switchTab('login');
+    } catch (error) {
+      showMsg(msg, messageForError(error), 'error');
     } finally {
       setBusy(btn, false, 'Criar conta', 'Criando');
     }
@@ -300,6 +338,67 @@
     document.getElementById('auth-screen').style.display = 'flex';
   }
 
+  function buildTomGrid(containerId, onSelect) {
+    const grid = document.getElementById(containerId);
+    if (!grid) return;
+    grid.innerHTML = '';
+    TONS.forEach((tom) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'tom-btn';
+      btn.textContent = tom;
+      btn.onclick = () => {
+        grid.querySelectorAll('.tom-btn').forEach((b) => b.classList.remove('selected'));
+        btn.classList.add('selected');
+        onSelect(tom);
+      };
+      grid.appendChild(btn);
+    });
+  }
+
+  function setTomGrid(containerId, tom, onSelect) {
+    const grid = document.getElementById(containerId);
+    if (!grid) return;
+    grid.querySelectorAll('.tom-btn').forEach((btn) => {
+      btn.classList.toggle('selected', btn.textContent === tom);
+    });
+    if (tom && onSelect) onSelect(tom);
+  }
+
+  function buildTomGrids() {
+    buildTomGrid('tom-grid', (t) => {
+      selectedTom = t;
+    });
+    buildTomGrid('tom-grid-salvar', (t) => {
+      selectedTomSalvar = t;
+    });
+
+    const filterTom = document.getElementById('filter-tom-geral');
+    if (filterTom && !filterTom.dataset.bound) {
+      TONS.forEach((tom) => {
+        const op = document.createElement('option');
+        op.value = tom;
+        op.textContent = tom;
+        filterTom.appendChild(op);
+      });
+      filterTom.dataset.bound = '1';
+    }
+  }
+
+  function showPage(name) {
+    const pages = ['minhas', 'geral', 'setlists', 'historico'];
+    pages.forEach((p) => {
+      document.getElementById(`page-${p}`).classList.toggle('active', p === name);
+    });
+    document.querySelectorAll('.nav-tab').forEach((tab, idx) => {
+      tab.classList.toggle('active', pages[idx] === name);
+    });
+
+    if (name === 'geral') loadGeral();
+    if (name === 'setlists') loadSetlists();
+    if (name === 'historico') loadHistory();
+  }
+
   function enterApp() {
     document.getElementById('auth-screen').style.display = 'none';
     document.getElementById('app-screen').style.display = 'block';
@@ -308,30 +407,74 @@
     updateHeader();
     buildTomGrids();
     attachSearchHandlers();
+    attachGeralControls();
     loadMinhas();
+    loadSetlists();
+    loadHistory();
     if (isAdmin) loadAdminOverview();
   }
 
-  function showPage(name) {
-    document.getElementById('page-minhas').classList.toggle('active', name === 'minhas');
-    document.getElementById('page-geral').classList.toggle('active', name === 'geral');
-    document.querySelectorAll('.nav-tab')[0].classList.toggle('active', name === 'minhas');
-    document.querySelectorAll('.nav-tab')[1].classList.toggle('active', name === 'geral');
-    if (name === 'geral') loadGeral();
+  function applyGeralFilterAndSort() {
+    const q = normalize(document.getElementById('search-geral').value);
+    let list = allGeral.filter((i) => normalize(i.nome).includes(q));
+
+    if (geralFilterTom) {
+      if (geralFilterTom === SEM_TOM) {
+        list = list.filter((i) => !i.meuTom);
+      } else {
+        list = list.filter((i) => i.meuTom === geralFilterTom);
+      }
+    }
+
+    if (geralSort === 'nome_asc') {
+      list.sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || '')));
+    } else if (geralSort === 'nome_desc') {
+      list.sort((a, b) => String(b.nome || '').localeCompare(String(a.nome || '')));
+    } else if (geralSort === 'recente') {
+      list.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+    } else if (geralSort === 'com_tom') {
+      list.sort((a, b) => Number(Boolean(b.meuTom)) - Number(Boolean(a.meuTom)) || String(a.nome).localeCompare(String(b.nome)));
+    }
+
+    geralFiltered = list;
+  }
+
+  function renderGeralPagination() {
+    const box = document.getElementById('geral-pagination');
+    const prev = document.getElementById('geral-prev');
+    const next = document.getElementById('geral-next');
+    const indicator = document.getElementById('geral-page-indicator');
+    if (!box || !prev || !next || !indicator) return;
+
+    const totalPages = Math.max(1, Math.ceil(geralFiltered.length / GERAL_PER_PAGE));
+    if (geralPage > totalPages) geralPage = totalPages;
+
+    box.classList.toggle('hidden', geralFiltered.length <= GERAL_PER_PAGE);
+    prev.disabled = geralPage <= 1;
+    next.disabled = geralPage >= totalPages;
+    indicator.textContent = `Pagina ${geralPage} de ${totalPages}`;
+  }
+
+  function renderGeralFromState() {
+    const start = (geralPage - 1) * GERAL_PER_PAGE;
+    const pageItems = geralFiltered.slice(start, start + GERAL_PER_PAGE);
+    renderGeral(pageItems);
+    renderGeralPagination();
   }
 
   function loadMinhas() {
     const el = document.getElementById('list-minhas');
-    el.innerHTML = '<div class="loading-screen">Carregando...</div>';
-
+    el.innerHTML = '<div class="loading-screen skeleton"></div>';
     try {
       const musicas = getMusicas();
-      const mm = getMM().filter(r => r.ministrante_id === currentProfile.id);
+      const mm = getMM().filter((r) => r.ministrante_id === currentProfile.id);
 
-      allMinhas = mm.map(row => ({
-        ...row,
-        musicas: musicas.find(m => m.id === row.musica_id) || null
-      })).filter(r => r.musicas);
+      allMinhas = mm
+        .map((row) => ({
+          ...row,
+          musicas: musicas.find((m) => m.id === row.musica_id) || null
+        }))
+        .filter((r) => r.musicas);
 
       allMinhas.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
       renderMinhas(allMinhas);
@@ -348,11 +491,12 @@
       return;
     }
 
-    el.innerHTML = list.map(item => {
-      const nome = item.musicas?.nome || 'Sem nome';
-      const link = item.musicas?.link || '';
-      const obs = item.observacoes || '';
-      return `
+    el.innerHTML = list
+      .map((item) => {
+        const nome = item.musicas?.nome || 'Sem nome';
+        const link = item.musicas?.link || '';
+        const obs = item.observacoes || '';
+        return `
         <article class="music-card">
           <div>
             <div class="card-title">${escapeHtml(nome)}</div>
@@ -368,31 +512,33 @@
           </div>
         </article>
       `;
-    }).join('');
+      })
+      .join('');
   }
 
-  function loadGeral(showSuccess = false) {
+  function loadGeral(showSuccess) {
     const el = document.getElementById('list-geral');
-    el.innerHTML = '<div class="loading-screen">Carregando...</div>';
+    el.innerHTML = '<div class="loading-screen skeleton"></div>';
 
     try {
       const musicas = getMusicas();
-      const mm = getMM().filter(r => r.ministrante_id === currentProfile.id);
-      const mmMap = new Map(mm.map(r => [r.musica_id, r]));
+      const mm = getMM().filter((r) => r.ministrante_id === currentProfile.id);
+      const mmMap = new Map(mm.map((r) => [r.musica_id, r]));
       const users = getUsers();
 
-      allGeral = musicas.map(m => {
+      allGeral = musicas.map((m) => {
         const my = mmMap.get(m.id);
-        const dono = users.find(u => u.id === m.criado_por);
+        const dono = users.find((u) => u.id === m.criado_por);
         return {
           ...m,
           meuTom: my?.tom || null,
           minhaObs: my?.observacoes || '',
           profiles: { nome: dono?.nome || 'Desconhecido' }
         };
-      }).sort((a, b) => String(a.nome || '').localeCompare(String(b.nome || '')));
+      });
 
-      renderGeral(allGeral);
+      applyGeralFilterAndSort();
+      renderGeralFromState();
       updateStats();
       if (showSuccess) showToast('Lista geral atualizada', 'success');
     } catch {
@@ -403,11 +549,13 @@
   function renderGeral(list) {
     const el = document.getElementById('list-geral');
     if (!list.length) {
-      el.innerHTML = '<div class="empty-state">Nenhuma musica na lista geral</div>';
+      el.innerHTML = '<div class="empty-state">Nenhuma musica para os filtros atuais</div>';
       return;
     }
 
-    el.innerHTML = list.map(item => `
+    el.innerHTML = list
+      .map(
+        (item) => `
       <article class="list-item" onclick="openGeralDetail('${item.id}')">
         <div>
           <div class="card-title">${escapeHtml(item.nome)}</div>
@@ -415,54 +563,9 @@
         </div>
         <div>${item.meuTom ? '<span class="tom-badge mine">Com tom</span>' : '<span class="tom-badge none">Sem tom</span>'}</div>
       </article>
-    `).join('');
-  }
-
-  function loadAdminOverview(showSuccess = false) {
-    if (!isAdmin) return;
-
-    const el = document.getElementById('admin-list');
-    if (!el) return;
-
-    try {
-      const mm = getMM();
-      const musicas = getMusicas();
-      const users = getUsers();
-
-      allAdminRecords = mm.map(row => {
-        const musica = musicas.find(m => m.id === row.musica_id);
-        const user = users.find(u => u.id === row.ministrante_id);
-        return {
-          ...row,
-          musicas: { nome: musica?.nome || 'Sem musica' },
-          profiles: { nome: user?.nome || 'Sem nome', email: user?.email || '-' }
-        };
-      }).sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
-
-      renderAdminOverview();
-      if (showSuccess) showToast('Painel admin atualizado', 'success');
-    } catch {
-      el.innerHTML = '<div class="empty-state">Erro ao carregar visao admin</div>';
-    }
-  }
-
-  function renderAdminOverview() {
-    const el = document.getElementById('admin-list');
-    if (!el) return;
-
-    if (!allAdminRecords.length) {
-      el.innerHTML = '<div class="empty-state">Sem registros para exibir</div>';
-      return;
-    }
-
-    el.innerHTML = allAdminRecords.map(row => `
-      <article class="admin-item">
-        <div class="admin-item-title">${escapeHtml(row.musicas?.nome || 'Sem musica')}</div>
-        <div class="admin-item-sub"><strong>Usuario:</strong> ${escapeHtml(row.profiles?.nome || 'Sem nome')} (${escapeHtml(row.profiles?.email || '-')})</div>
-        <div class="admin-item-sub"><strong>Tom:</strong> ${escapeHtml(displayTom(row.tom))}</div>
-        <div class="admin-item-sub"><strong>Obs:</strong> ${escapeHtml(row.observacoes || '-')}</div>
-      </article>
-    `).join('');
+    `
+      )
+      .join('');
   }
 
   function attachSearchHandlers() {
@@ -472,17 +575,62 @@
     if (!sMinhas.dataset.bound) {
       sMinhas.addEventListener('input', () => {
         const q = normalize(sMinhas.value);
-        renderMinhas(allMinhas.filter(i => normalize(i.musicas?.nome).includes(q)));
+        renderMinhas(allMinhas.filter((i) => normalize(i.musicas?.nome).includes(q)));
       });
       sMinhas.dataset.bound = '1';
     }
 
     if (!sGeral.dataset.bound) {
       sGeral.addEventListener('input', () => {
-        const q = normalize(sGeral.value);
-        renderGeral(allGeral.filter(i => normalize(i.nome).includes(q)));
+        geralPage = 1;
+        applyGeralFilterAndSort();
+        renderGeralFromState();
       });
       sGeral.dataset.bound = '1';
+    }
+  }
+
+  function attachGeralControls() {
+    const filter = document.getElementById('filter-tom-geral');
+    const sort = document.getElementById('sort-geral');
+    const prev = document.getElementById('geral-prev');
+    const next = document.getElementById('geral-next');
+
+    if (filter && !filter.dataset.bound) {
+      filter.addEventListener('change', () => {
+        geralFilterTom = filter.value;
+        geralPage = 1;
+        applyGeralFilterAndSort();
+        renderGeralFromState();
+      });
+      filter.dataset.bound = '1';
+    }
+
+    if (sort && !sort.dataset.bound) {
+      sort.addEventListener('change', () => {
+        geralSort = sort.value;
+        geralPage = 1;
+        applyGeralFilterAndSort();
+        renderGeralFromState();
+      });
+      sort.dataset.bound = '1';
+    }
+
+    if (prev && !prev.dataset.bound) {
+      prev.addEventListener('click', () => {
+        if (geralPage > 1) geralPage -= 1;
+        renderGeralFromState();
+      });
+      prev.dataset.bound = '1';
+    }
+
+    if (next && !next.dataset.bound) {
+      next.addEventListener('click', () => {
+        const total = Math.max(1, Math.ceil(geralFiltered.length / GERAL_PER_PAGE));
+        if (geralPage < total) geralPage += 1;
+        renderGeralFromState();
+      });
+      next.dataset.bound = '1';
     }
   }
 
@@ -496,7 +644,9 @@
     document.getElementById('m-nome').disabled = false;
     document.getElementById('m-link').value = '';
     document.getElementById('m-obs').value = '';
-    setTomGrid('tom-grid', SEM_TOM, t => { selectedTom = t; });
+    setTomGrid('tom-grid', SEM_TOM, (t) => {
+      selectedTom = t;
+    });
 
     document.getElementById('modal-minhas').classList.add('open');
   }
@@ -507,7 +657,7 @@
 
   function editarMinhas(e, id) {
     e.stopPropagation();
-    const item = allMinhas.find(i => i.id === id);
+    const item = allMinhas.find((i) => i.id === id);
     if (!item) return;
 
     editingMusicaId = item.id;
@@ -516,10 +666,12 @@
 
     document.getElementById('modal-minhas-title').textContent = 'Editar musica';
     document.getElementById('m-nome').value = item.musicas?.nome || '';
-    document.getElementById('m-nome').disabled = true;
+    document.getElementById('m-nome').disabled = false;
     document.getElementById('m-link').value = item.musicas?.link || '';
     document.getElementById('m-obs').value = item.observacoes || '';
-    setTomGrid('tom-grid', selectedTom, t => { selectedTom = t; });
+    setTomGrid('tom-grid', selectedTom, (t) => {
+      selectedTom = t;
+    });
 
     document.getElementById('modal-minhas').classList.add('open');
   }
@@ -528,13 +680,18 @@
     const nome = document.getElementById('m-nome').value.trim();
     const link = document.getElementById('m-link').value.trim();
     const obs = document.getElementById('m-obs').value.trim();
-
-    if (!nome) return showToast('Informe o nome da musica', 'error');
-    if (!validUrl(link)) return showToast('Informe um link valido com http/https', 'error');
-
     const btn = document.getElementById('btn-save-minhas');
-    setBusy(btn, true, 'Salvar', 'Salvando');
 
+    if (!nome) {
+      showToast('Informe o nome da musica', 'error');
+      return;
+    }
+    if (!validUrl(link)) {
+      showToast('Informe um link valido com http/https', 'error');
+      return;
+    }
+
+    setBusy(btn, true, 'Salvar', 'Salvando');
     try {
       const tomValue = getTomOrNull(selectedTom);
       const musicas = getMusicas();
@@ -542,7 +699,7 @@
       let musicaId = editingMusicaGlobalId;
 
       if (!editingMusicaId) {
-        const existingMusica = musicas.find(m => normalize(m.nome) === normalize(nome));
+        const existingMusica = musicas.find((m) => normalize(m.nome) === normalize(nome));
         if (existingMusica) {
           musicaId = existingMusica.id;
         } else {
@@ -556,39 +713,52 @@
           musicas.push(createdMusica);
           setMusicas(musicas);
           musicaId = createdMusica.id;
+          logHistory('song_created', `Musica criada: ${nome}`, 'song', createdMusica.id);
         }
 
-        const existingAssoc = mm.find(r => r.ministrante_id === currentProfile.id && r.musica_id === musicaId);
+        const existingAssoc = mm.find((r) => r.ministrante_id === currentProfile.id && r.musica_id === musicaId);
         if (existingAssoc) {
           existingAssoc.tom = tomValue;
           existingAssoc.observacoes = obs || null;
           existingAssoc.updated_at = new Date().toISOString();
+          logHistory('song_linked', `Atualizou associacao para ${nome}`, 'association', existingAssoc.id);
         } else {
-          mm.push({
+          const assoc = {
             id: uid(),
             ministrante_id: currentProfile.id,
             musica_id: musicaId,
             tom: tomValue,
             observacoes: obs || null,
             created_at: new Date().toISOString()
-          });
+          };
+          mm.push(assoc);
+          logHistory('song_linked', `Adicionou musica em Minhas: ${nome}`, 'association', assoc.id);
         }
         setMM(mm);
       } else {
-        const musica = musicas.find(m => m.id === musicaId);
-        if (musica) {
-          musica.link = link || null;
-          musica.updated_at = new Date().toISOString();
-          setMusicas(musicas);
+        const assoc = mm.find((r) => r.id === editingMusicaId);
+        if (!assoc) throw appError('E404', 'Associacao nao encontrada');
+
+        const currentMusica = musicas.find((m) => m.id === musicaId);
+        if (!currentMusica) throw appError('E404', 'Musica nao encontrada');
+
+        const duplicateByName = musicas.find((m) => m.id !== currentMusica.id && normalize(m.nome) === normalize(nome));
+        if (duplicateByName) {
+          assoc.musica_id = duplicateByName.id;
+          musicaId = duplicateByName.id;
+        } else {
+          currentMusica.nome = nome;
+          currentMusica.link = link || null;
+          currentMusica.updated_at = new Date().toISOString();
         }
 
-        const assoc = mm.find(r => r.id === editingMusicaId);
-        if (assoc) {
-          assoc.tom = tomValue;
-          assoc.observacoes = obs || null;
-          assoc.updated_at = new Date().toISOString();
-          setMM(mm);
-        }
+        assoc.tom = tomValue;
+        assoc.observacoes = obs || null;
+        assoc.updated_at = new Date().toISOString();
+
+        setMusicas(musicas);
+        setMM(mm);
+        logHistory('song_updated', `Atualizou musica: ${nome}`, 'song', musicaId);
       }
 
       closeModalMinhas();
@@ -596,33 +766,57 @@
       loadMinhas();
       if (document.getElementById('page-geral').classList.contains('active')) loadGeral();
       if (isAdmin) loadAdminOverview();
-    } catch {
-      showToast('Erro ao salvar musica', 'error');
+      loadSetlists();
+    } catch (error) {
+      showToast(messageForError(error), 'error');
     } finally {
       setBusy(btn, false, 'Salvar', 'Salvando');
     }
   }
 
-  function deletarMinhas(e, id) {
-    e.stopPropagation();
-    if (!window.confirm('Remover esta musica da sua lista?')) return;
+  async function askConfirm(title, message) {
+    const modal = document.getElementById('modal-confirm');
+    document.getElementById('confirm-title').textContent = title;
+    document.getElementById('confirm-msg').textContent = message;
+    modal.classList.add('open');
+    return new Promise((resolve) => {
+      confirmResolver = resolve;
+    });
+  }
 
-    const mm = getMM();
-    const idx = mm.findIndex(r => r.id === id);
-    if (idx >= 0) {
-      mm.splice(idx, 1);
-      setMM(mm);
-      showToast('Musica removida', 'success');
-      loadMinhas();
-      if (document.getElementById('page-geral').classList.contains('active')) loadGeral();
-      if (isAdmin) loadAdminOverview();
-    } else {
-      showToast('Registro nao encontrado', 'error');
+  function closeConfirmModal(result) {
+    document.getElementById('modal-confirm').classList.remove('open');
+    if (confirmResolver) {
+      confirmResolver(Boolean(result));
+      confirmResolver = null;
     }
   }
 
+  async function deletarMinhas(e, id) {
+    e.stopPropagation();
+    const ok = await askConfirm('Remover musica', 'Remover esta musica da sua lista?');
+    if (!ok) return;
+
+    const mm = getMM();
+    const idx = mm.findIndex((r) => r.id === id);
+    if (idx < 0) {
+      showToast(messageForError(appError('E404', 'Registro nao encontrado')), 'error');
+      return;
+    }
+
+    const removed = mm[idx];
+    mm.splice(idx, 1);
+    setMM(mm);
+    logHistory('song_unlinked', 'Removeu musica da lista pessoal', 'association', removed.id);
+
+    showToast('Musica removida', 'success');
+    loadMinhas();
+    if (document.getElementById('page-geral').classList.contains('active')) loadGeral();
+    if (isAdmin) loadAdminOverview();
+  }
+
   function openGeralDetail(id) {
-    const item = allGeral.find(i => i.id === id);
+    const item = allGeral.find((i) => i.id === id);
     if (!item) return;
     geralSelectedMusica = item;
 
@@ -652,7 +846,7 @@
 
   function abrirSalvarTomGeral(id) {
     closeModalGeral();
-    const item = allGeral.find(i => i.id === id);
+    const item = allGeral.find((i) => i.id === id);
     if (!item) return;
 
     geralSelectedMusica = item;
@@ -660,7 +854,9 @@
 
     document.getElementById('salvar-tom-nome').textContent = `Definir tom para "${item.nome}"`;
     document.getElementById('salvar-obs').value = item.minhaObs || '';
-    setTomGrid('tom-grid-salvar', selectedTomSalvar, t => { selectedTomSalvar = t; });
+    setTomGrid('tom-grid-salvar', selectedTomSalvar, (t) => {
+      selectedTomSalvar = t;
+    });
     document.getElementById('modal-salvar-tom').classList.add('open');
   }
 
@@ -675,10 +871,11 @@
 
     try {
       const item = geralSelectedMusica;
+      if (!item) throw appError('E404', 'Musica nao encontrada');
       const tomValue = getTomOrNull(selectedTomSalvar);
       const mm = getMM();
 
-      const assoc = mm.find(r => r.ministrante_id === currentProfile.id && r.musica_id === item.id);
+      const assoc = mm.find((r) => r.ministrante_id === currentProfile.id && r.musica_id === item.id);
       if (assoc) {
         assoc.tom = tomValue;
         assoc.observacoes = obs || null;
@@ -695,13 +892,15 @@
       }
 
       setMM(mm);
+      logHistory('tom_saved', `Salvou tom em ${item.nome}: ${displayTom(tomValue)}`, 'song', item.id);
+
       closeModalSalvarTom();
       showToast('Tom salvo com sucesso', 'success');
       loadGeral();
       loadMinhas();
       if (isAdmin) loadAdminOverview();
-    } catch {
-      showToast('Erro ao salvar tom', 'error');
+    } catch (error) {
+      showToast(messageForError(error), 'error');
     } finally {
       setBusy(btn, false, 'Salvar', 'Salvando');
     }
@@ -719,16 +918,11 @@
     }
 
     const rows = [['nome', 'tom', 'link', 'observacoes']];
-    allMinhas.forEach(item => {
-      rows.push([
-        item.musicas?.nome || '',
-        displayTom(item.tom),
-        item.musicas?.link || '',
-        item.observacoes || ''
-      ]);
+    allMinhas.forEach((item) => {
+      rows.push([item.musicas?.nome || '', displayTom(item.tom), item.musicas?.link || '', item.observacoes || '']);
     });
 
-    const csv = rows.map(r => r.map(v => `"${String(v).replaceAll('"', '""')}"`).join(',')).join('\n');
+    const csv = rows.map((r) => r.map((v) => `"${String(v).replaceAll('"', '""')}"`).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -739,17 +933,112 @@
     showToast('CSV exportado', 'success');
   }
 
-  function escapeHtml(v) {
-    return String(v)
-      .replaceAll('&', '&amp;')
-      .replaceAll('<', '&lt;')
-      .replaceAll('>', '&gt;')
-      .replaceAll('"', '&quot;')
-      .replaceAll("'", '&#39;');
+  function loadAdminOverview(showSuccess) {
+    if (!isAdmin) return;
+
+    const el = document.getElementById('admin-list');
+    if (!el) return;
+
+    try {
+      const mm = getMM();
+      const musicas = getMusicas();
+      const users = getUsers();
+
+      allAdminRecords = mm
+        .map((row) => {
+          const musica = musicas.find((m) => m.id === row.musica_id);
+          const user = users.find((u) => u.id === row.ministrante_id);
+          return {
+            ...row,
+            musicas: { nome: musica?.nome || 'Sem musica' },
+            profiles: { nome: user?.nome || 'Sem nome', email: user?.email || '-' }
+          };
+        })
+        .sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+
+      renderAdminOverview();
+      if (showSuccess) showToast('Painel admin atualizado', 'success');
+    } catch {
+      el.innerHTML = '<div class="empty-state">Erro ao carregar visao admin</div>';
+    }
   }
 
-  function escapeAttr(v) {
-    return String(v).replaceAll('"', '&quot;').replaceAll("'", '&#39;');
+  function renderAdminOverview() {
+    const el = document.getElementById('admin-list');
+    if (!el) return;
+
+    const users = getUsers();
+    const songs = getMusicas();
+    const historyCount = getHistory().length;
+
+    const top = `
+      <article class="admin-item">
+        <div class="admin-item-title">Resumo de governanca</div>
+        <div class="admin-item-sub"><strong>Usuarios:</strong> ${users.length}</div>
+        <div class="admin-item-sub"><strong>Musicas:</strong> ${songs.length}</div>
+        <div class="admin-item-sub"><strong>Eventos de auditoria:</strong> ${historyCount}</div>
+      </article>
+    `;
+
+    if (!allAdminRecords.length) {
+      el.innerHTML = `${top}<div class="empty-state">Sem registros para exibir</div>`;
+      return;
+    }
+
+    el.innerHTML = `${top}${allAdminRecords
+      .map(
+        (row) => `
+      <article class="admin-item">
+        <div class="admin-item-title">${escapeHtml(row.musicas?.nome || 'Sem musica')}</div>
+        <div class="admin-item-sub"><strong>Usuario:</strong> ${escapeHtml(row.profiles?.nome || 'Sem nome')} (${escapeHtml(row.profiles?.email || '-')})</div>
+        <div class="admin-item-sub"><strong>Tom:</strong> ${escapeHtml(displayTom(row.tom))}</div>
+        <div class="admin-item-sub"><strong>Obs:</strong> ${escapeHtml(row.observacoes || '-')}</div>
+      </article>
+    `
+      )
+      .join('')}`;
+  }
+
+  async function mergeDuplicateSongs() {
+    if (!isAdmin) return;
+    const ok = await askConfirm('Mesclar duplicadas', 'Deseja mesclar musicas com o mesmo nome normalizado?');
+    if (!ok) return;
+
+    const songs = getMusicas();
+    const mm = getMM();
+    const map = new Map();
+    const toDelete = new Set();
+    let merged = 0;
+
+    songs.forEach((song) => {
+      const key = normalize(song.nome);
+      if (!map.has(key)) {
+        map.set(key, song.id);
+      } else {
+        const keeperId = map.get(key);
+        mm.forEach((r) => {
+          if (r.musica_id === song.id) {
+            r.musica_id = keeperId;
+            merged += 1;
+          }
+        });
+        toDelete.add(song.id);
+      }
+    });
+
+    if (toDelete.size > 0) {
+      const filtered = songs.filter((s) => !toDelete.has(s.id));
+      setMusicas(filtered);
+      setMM(mm);
+      logHistory('admin_merge_duplicates', `Mesclou ${toDelete.size} musicas duplicadas`, 'song', null);
+      showToast(`Mesclagem concluida: ${toDelete.size} duplicadas`, 'success');
+      loadMinhas();
+      loadGeral();
+      loadSetlists();
+      loadAdminOverview();
+    } else {
+      showToast('Nenhuma duplicada encontrada', 'success');
+    }
   }
 
   function openAdminCreateUserModal() {
@@ -765,46 +1054,372 @@
   }
 
   function adminCreateUser() {
-    if (!isAdmin) return showToast('Somente admin pode cadastrar usuario', 'error');
+    if (!isAdmin) {
+      showToast('Somente admin pode cadastrar usuario', 'error');
+      return;
+    }
 
     const nome = document.getElementById('admin-user-name').value.trim();
     const email = document.getElementById('admin-user-email').value.trim();
     const pass = document.getElementById('admin-user-pass').value;
 
     if (!nome || !validEmail(email) || pass.length < 6) {
-      return showToast('Informe nome, email valido e senha minima de 6 chars', 'error');
+      showToast('Informe nome, email valido e senha minima de 6 chars', 'error');
+      return;
     }
 
     const users = getUsers();
-    const exists = users.some(u => normalize(u.email) === normalize(email));
+    const exists = users.some((u) => normalize(u.email) === normalize(email));
     if (exists) {
-      return showToast('Este email ja esta cadastrado', 'error');
+      showToast('Este email ja esta cadastrado', 'error');
+      return;
     }
 
-    users.push({
+    const created = {
       id: uid(),
       nome,
       email,
       password: pass,
       role: 'user',
       created_at: new Date().toISOString()
+    };
+    users.push(created);
+    setUsers(users);
+    logHistory('admin_user_created', `Admin criou usuario: ${email}`, 'user', created.id);
+
+    showToast('Usuario cadastrado com sucesso (modo local)', 'success');
+    closeAdminCreateUserModal();
+    loadAdminOverview();
+  }
+
+  function loadSetlists() {
+    const el = document.getElementById('setlist-list');
+    if (!el) return;
+
+    const list = getSetlists().slice().sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+    if (!list.length) {
+      el.innerHTML = '<div class="empty-state">Nenhum culto cadastrado</div>';
+      return;
+    }
+
+    const songs = getMusicas();
+    el.innerHTML = list
+      .map((s) => {
+        const count = (s.items || []).length;
+        const nextSongs = (s.items || [])
+          .slice(0, 3)
+          .map((it) => songs.find((m) => m.id === it.musica_id)?.nome)
+          .filter(Boolean)
+          .join(', ');
+
+        return `
+          <article class="setlist-card">
+            <div class="setlist-title">${escapeHtml(s.title)}</div>
+            <div class="setlist-sub">Data: ${escapeHtml(s.date)} · Musicas: ${count}</div>
+            <div class="setlist-sub">${escapeHtml(nextSongs || 'Sem musicas')}</div>
+            <div class="setlist-actions">
+              <button class="btn-ghost" onclick="openSetlistDetail('${s.id}')">Abrir</button>
+              <button class="btn-ghost" onclick="openSetlistModal('${s.id}')">Editar</button>
+              <button class="btn-cancel" onclick="deleteSetlist('${s.id}')">Excluir</button>
+            </div>
+          </article>
+        `;
+      })
+      .join('');
+  }
+
+  function openSetlistModal(id) {
+    editingSetlistId = id || null;
+    const modal = document.getElementById('modal-setlist');
+    const title = document.getElementById('setlist-modal-title');
+    const inputTitle = document.getElementById('setlist-title');
+    const inputDate = document.getElementById('setlist-date');
+    const inputReminder = document.getElementById('setlist-reminder');
+
+    if (!editingSetlistId) {
+      title.textContent = 'Novo culto';
+      inputTitle.value = '';
+      inputDate.value = '';
+      inputReminder.value = '';
+    } else {
+      const setlist = getSetlists().find((s) => s.id === editingSetlistId);
+      if (!setlist) return;
+      title.textContent = 'Editar culto';
+      inputTitle.value = setlist.title || '';
+      inputDate.value = setlist.date || '';
+      inputReminder.value = setlist.reminderAt || '';
+    }
+
+    modal.classList.add('open');
+  }
+
+  function closeSetlistModal() {
+    document.getElementById('modal-setlist').classList.remove('open');
+  }
+
+  async function saveSetlist() {
+    const title = document.getElementById('setlist-title').value.trim();
+    const date = document.getElementById('setlist-date').value;
+    const reminderAt = document.getElementById('setlist-reminder').value;
+    if (!title || !date) {
+      showToast('Informe nome e data do culto', 'error');
+      return;
+    }
+
+    const setlists = getSetlists();
+    if (!editingSetlistId) {
+      const created = {
+        id: uid(),
+        title,
+        date,
+        reminderAt: reminderAt || null,
+        created_by: currentProfile.id,
+        created_at: new Date().toISOString(),
+        items: []
+      };
+      setlists.push(created);
+      logHistory('setlist_created', `Culto criado: ${title}`, 'setlist', created.id);
+      scheduleReminder(created);
+    } else {
+      const s = setlists.find((x) => x.id === editingSetlistId);
+      if (!s) {
+        showToast(messageForError(appError('E404', 'Setlist nao encontrado')), 'error');
+        return;
+      }
+      s.title = title;
+      s.date = date;
+      s.reminderAt = reminderAt || null;
+      s.updated_at = new Date().toISOString();
+      logHistory('setlist_updated', `Culto atualizado: ${title}`, 'setlist', s.id);
+      scheduleReminder(s);
+    }
+
+    setSetlists(setlists);
+    closeSetlistModal();
+    loadSetlists();
+    showToast('Culto salvo com sucesso', 'success');
+  }
+
+  async function deleteSetlist(id) {
+    const ok = await askConfirm('Excluir culto', 'Deseja realmente excluir este culto?');
+    if (!ok) return;
+
+    const setlists = getSetlists();
+    const idx = setlists.findIndex((s) => s.id === id);
+    if (idx < 0) {
+      showToast(messageForError(appError('E404', 'Setlist nao encontrado')), 'error');
+      return;
+    }
+    const removed = setlists[idx];
+    setlists.splice(idx, 1);
+    setSetlists(setlists);
+    logHistory('setlist_deleted', `Culto removido: ${removed.title}`, 'setlist', id);
+    loadSetlists();
+    showToast('Culto removido', 'success');
+  }
+
+  function openSetlistDetail(id) {
+    selectedSetlistId = id;
+    const setlist = getSetlists().find((s) => s.id === id);
+    if (!setlist) return;
+
+    document.getElementById('setlist-detail-title').textContent = `${setlist.title} (${setlist.date})`;
+
+    const picker = document.getElementById('setlist-song-picker');
+    const songs = getMusicas().slice().sort((a, b) => String(a.nome).localeCompare(String(b.nome)));
+    picker.innerHTML = songs.map((s) => `<option value="${s.id}">${escapeHtml(s.nome)}</option>`).join('');
+
+    renderSetlistSongs(setlist);
+    document.getElementById('modal-setlist-detail').classList.add('open');
+  }
+
+  function closeSetlistDetailModal() {
+    document.getElementById('modal-setlist-detail').classList.remove('open');
+  }
+
+  function renderSetlistSongs(setlist) {
+    const el = document.getElementById('setlist-song-list');
+    const songs = getMusicas();
+    const items = setlist.items || [];
+
+    if (!items.length) {
+      el.innerHTML = '<div class="empty-state">Sem musicas neste culto</div>';
+      return;
+    }
+
+    el.innerHTML = items
+      .map((it) => {
+        const song = songs.find((s) => s.id === it.musica_id);
+        return `
+          <div class="setlist-song-item">
+            <div>${escapeHtml(song?.nome || 'Musica removida')}</div>
+            <button class="btn-cancel" onclick="removeSongFromSetlist('${it.musica_id}')">Remover</button>
+          </div>
+        `;
+      })
+      .join('');
+  }
+
+  function addSongToSetlist() {
+    const setlists = getSetlists();
+    const setlist = setlists.find((s) => s.id === selectedSetlistId);
+    if (!setlist) return;
+
+    const musicaId = document.getElementById('setlist-song-picker').value;
+    if (!musicaId) return;
+
+    setlist.items = setlist.items || [];
+    const exists = setlist.items.some((i) => i.musica_id === musicaId);
+    if (exists) {
+      showToast('Musica ja esta no culto', 'error');
+      return;
+    }
+
+    setlist.items.push({ musica_id: musicaId, added_at: new Date().toISOString() });
+    setSetlists(setlists);
+
+    const songs = getMusicas();
+    const songName = songs.find((s) => s.id === musicaId)?.nome || 'musica';
+    logHistory('setlist_song_added', `Adicionou ${songName} em ${setlist.title}`, 'setlist', setlist.id);
+
+    const alert = detectRecentRepetition(musicaId, setlist.id, 30);
+    if (alert) {
+      showToast(`Atencao: ${songName} ja foi usada recentemente em ${alert}`, 'error');
+    } else {
+      showToast('Musica adicionada ao culto', 'success');
+    }
+
+    renderSetlistSongs(setlist);
+    loadSetlists();
+  }
+
+  function removeSongFromSetlist(musicaId) {
+    const setlists = getSetlists();
+    const setlist = setlists.find((s) => s.id === selectedSetlistId);
+    if (!setlist) return;
+
+    setlist.items = (setlist.items || []).filter((i) => i.musica_id !== musicaId);
+    setSetlists(setlists);
+    logHistory('setlist_song_removed', `Removeu musica de ${setlist.title}`, 'setlist', setlist.id);
+    renderSetlistSongs(setlist);
+    loadSetlists();
+  }
+
+  function detectRecentRepetition(musicaId, currentSetlistId, daysWindow) {
+    const now = new Date();
+    const minDate = new Date(now.getTime() - daysWindow * 24 * 60 * 60 * 1000);
+
+    const repeated = getSetlists().find((s) => {
+      if (s.id === currentSetlistId) return false;
+      if (!s.date) return false;
+      const d = new Date(s.date + 'T00:00:00');
+      if (d < minDate || d > now) return false;
+      return (s.items || []).some((i) => i.musica_id === musicaId);
     });
 
-    setUsers(users);
-    showToast('Usuario cadastrado com sucesso (modo local).', 'success');
-    closeAdminCreateUserModal();
+    return repeated ? `${repeated.title} (${repeated.date})` : null;
+  }
+
+  function exportSetlistPdf() {
+    const setlist = getSetlists().find((s) => s.id === selectedSetlistId);
+    if (!setlist) return;
+    const songs = getMusicas();
+    const lines = (setlist.items || []).map((it, i) => `${i + 1}. ${songs.find((s) => s.id === it.musica_id)?.nome || 'Musica removida'}`);
+
+    const w = window.open('', '_blank');
+    if (!w) {
+      showToast('Nao foi possivel abrir impressao', 'error');
+      return;
+    }
+
+    w.document.write(`
+      <html><head><title>Setlist ${escapeHtml(setlist.title)}</title>
+      <style>body{font-family:Arial,sans-serif;padding:24px}h1{margin-bottom:4px}p{color:#666}li{margin-bottom:6px}</style>
+      </head><body>
+      <h1>${escapeHtml(setlist.title)}</h1>
+      <p>Data: ${escapeHtml(setlist.date)}</p>
+      <ol>${lines.map((l) => `<li>${escapeHtml(l.replace(/^\d+\.\s/, ''))}</li>`).join('')}</ol>
+      </body></html>
+    `);
+    w.document.close();
+    w.focus();
+    w.print();
+    logHistory('setlist_exported', `Exportou setlist ${setlist.title}`, 'setlist', setlist.id);
+  }
+
+  function loadHistory() {
+    const el = document.getElementById('history-list');
+    if (!el) return;
+
+    const list = getHistory().filter((h) => isAdmin || h.userId === currentProfile.id);
+    if (!list.length) {
+      el.innerHTML = '<div class="empty-state">Sem eventos de historico</div>';
+      return;
+    }
+
+    el.innerHTML = list
+      .slice(0, 150)
+      .map((h) => {
+        const when = new Date(h.created_at).toLocaleString('pt-BR');
+        return `
+          <article class="history-item">
+            <div class="history-title">${escapeHtml(h.action)}</div>
+            <div class="history-sub">${escapeHtml(h.details || '-')}</div>
+            <div class="history-sub">${escapeHtml(h.userEmail || '-')} · ${escapeHtml(when)}</div>
+          </article>
+        `;
+      })
+      .join('');
+  }
+
+  async function clearMyHistory() {
+    const ok = await askConfirm('Limpar historico', 'Deseja limpar os eventos visiveis para voce?');
+    if (!ok) return;
+
+    if (isAdmin) {
+      setHistory([]);
+      showToast('Historico limpo', 'success');
+      loadHistory();
+      return;
+    }
+
+    const remaining = getHistory().filter((h) => h.userId !== currentProfile.id);
+    setHistory(remaining);
+    showToast('Seu historico foi limpo', 'success');
+    loadHistory();
+  }
+
+  function scheduleReminder(setlist) {
+    if (!setlist?.reminderAt) return;
+    if (!('Notification' in window)) return;
+
+    const target = new Date(setlist.reminderAt).getTime();
+    const delay = target - Date.now();
+    if (delay <= 0 || delay > 2147483647) return;
+
+    if (Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+
+    setTimeout(() => {
+      if (Notification.permission === 'granted') {
+        new Notification('Lembrete de culto', {
+          body: `${setlist.title} - ${setlist.date}`
+        });
+      }
+    }, delay);
   }
 
   function bindModalClose() {
-    document.querySelectorAll('.modal-overlay').forEach(overlay => {
-      overlay.addEventListener('click', e => {
+    document.querySelectorAll('.modal-overlay').forEach((overlay) => {
+      overlay.addEventListener('click', (e) => {
         if (e.target === overlay) overlay.classList.remove('open');
       });
     });
 
-    document.addEventListener('keydown', e => {
+    document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
-        document.querySelectorAll('.modal-overlay.open').forEach(o => o.classList.remove('open'));
+        document.querySelectorAll('.modal-overlay.open').forEach((o) => o.classList.remove('open'));
       }
     });
   }
@@ -820,21 +1435,61 @@
     }
     window.addEventListener('online', sync);
     window.addEventListener('offline', sync);
+    sync();
   }
 
   function checkSession() {
     const user = getSessionUser();
     if (!user) return;
-
     currentProfile = user;
     currentUser = { user: { id: user.id, email: user.email }, mode: 'local' };
     enterApp();
+  }
+
+  function registerPwa() {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('service-worker.js').catch(() => {
+        showToast('Falha ao ativar cache offline', 'error');
+      });
+    }
+
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      document.getElementById('btn-install').classList.remove('hidden');
+    });
+
+    const installBtn = document.getElementById('btn-install');
+    if (installBtn && !installBtn.dataset.bound) {
+      installBtn.addEventListener('click', async () => {
+        if (!deferredPrompt) return;
+        deferredPrompt.prompt();
+        await deferredPrompt.userChoice;
+        deferredPrompt = null;
+        installBtn.classList.add('hidden');
+      });
+      installBtn.dataset.bound = '1';
+    }
+  }
+
+  function escapeHtml(v) {
+    return String(v)
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#39;');
+  }
+
+  function escapeAttr(v) {
+    return String(v).replaceAll('"', '&quot;').replaceAll("'", '&#39;');
   }
 
   function bootstrap() {
     ensureSeedData();
     bindModalClose();
     bindNetworkBadge();
+    registerPwa();
     checkSession();
   }
 
@@ -859,9 +1514,21 @@
     loadGeral,
     exportarMinhasCsv,
     loadAdminOverview,
+    mergeDuplicateSongs,
     openAdminCreateUserModal,
     closeAdminCreateUserModal,
-    adminCreateUser
+    adminCreateUser,
+    closeConfirmModal,
+    openSetlistModal,
+    closeSetlistModal,
+    saveSetlist,
+    deleteSetlist,
+    openSetlistDetail,
+    closeSetlistDetailModal,
+    addSongToSetlist,
+    removeSongFromSetlist,
+    exportSetlistPdf,
+    clearMyHistory
   });
 
   bootstrap();
