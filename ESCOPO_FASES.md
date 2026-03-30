@@ -12,8 +12,7 @@ Centralizar a gestao de musicas do ministerio de louvor com autenticacao, lista 
 - HTML em index.html
 - CSS em assets/css/styles.css
 - JavaScript em assets/js/app.js
-- Config em assets/js/config.js
-- Integracao com Supabase (Auth + REST)
+- Autenticacao e persistencia locais (localStorage)
 - Login e cadastro
 - Sessao persistida em localStorage
 - Minhas musicas: adicionar, editar, remover e buscar
@@ -26,9 +25,8 @@ Centralizar a gestao de musicas do ministerio de louvor com autenticacao, lista 
 ## O que foi feito nesta etapa
 
 - Refatoracao de arquivo unico para estrutura modular
-- Organizacao de configuracao separada para ambiente (config.js)
 - Melhorias de UX (busca, feedback visual, toasts, indicadores)
-- Melhorias de resiliencia (tentativa de refresh de sessao)
+- Simplificacao operacional em modo local (sem dependencias externas)
 - Publicacao no repositorio remoto em branch main
 
 ## 3. Fases do projeto
