@@ -1629,8 +1629,8 @@
           .join('');
         const isOwner = canEditSetlist(s.id);
         const editDeleteButtons = isOwner
-          ? `<button class="btn-icon" onclick="openSetlistModal('${s.id}')">Editar</button>
-              <button class="btn-icon" onclick="deleteSetlist('${s.id}')">Excluir</button>`
+          ? `<button class="btn-icon btn-setlist-action" onclick="openSetlistModal('${s.id}')">Editar</button>
+              <button class="btn-icon btn-setlist-action danger" onclick="deleteSetlist('${s.id}')">Excluir</button>`
           : '';
 
         return `
@@ -1640,7 +1640,7 @@
             <div class="setlist-sub">Responsavel: ${escapeHtml(ownerName)}</div>
             ${previewList ? `<div class="setlist-preview-list">${previewList}</div>` : `<div class="setlist-sub">${escapeHtml(nextSongs || 'Sem musicas')}</div>`}
             <div class="setlist-actions">
-              <button class="btn-icon" onclick="openSetlistDetail('${s.id}')">Abrir</button>
+              <button class="btn-icon btn-setlist-action" onclick="openSetlistDetail('${s.id}')">Abrir</button>
               ${editDeleteButtons}
             </div>
           </article>
@@ -1789,7 +1789,7 @@
         const song = songs.find((s) => s.id === it.musica_id);
         const minister = getUsers().find((u) => u.id === (it.added_by || setlist.created_by));
         const ministerName = minister?.nome || minister?.email || 'Ministrante';
-        const removeBtn = isOwner ? `<button class="btn-icon" onclick="removeSongFromSetlist('${it.musica_id}')">Remover</button>` : '';
+        const removeBtn = isOwner ? `<button class="btn-icon btn-setlist-action danger" onclick="removeSongFromSetlist('${it.musica_id}')">Remover</button>` : '';
         return `
           <div class="setlist-song-item">
             <div class="setlist-song-main">

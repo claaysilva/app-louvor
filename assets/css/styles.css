@@ -483,10 +483,25 @@ select:focus-visible {
   flex-wrap: wrap;
 }
 
+.btn-setlist-action {
+  padding: 7px 10px;
+  font-size: 12px;
+  border-radius: 9px;
+  line-height: 1.2;
+  min-height: 30px;
+}
+
+.btn-setlist-action.danger {
+  background: #fff3f2;
+  border-color: #efc7c2;
+  color: #9f3126;
+}
+
 .setlist-song-item {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
+  gap: 10px;
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 8px 10px;
@@ -495,6 +510,7 @@ select:focus-visible {
 
 .setlist-song-main {
   min-width: 0;
+  flex: 1;
 }
 
 .setlist-song-name {
@@ -747,6 +763,25 @@ select:focus-visible {
 
   .toolbar-row {
     grid-template-columns: 1fr;
+  }
+
+  .setlist-actions {
+    gap: 6px;
+  }
+
+  .btn-setlist-action {
+    flex: 1 1 auto;
+    text-align: center;
+  }
+
+  .setlist-song-item {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .setlist-song-item .btn-setlist-action {
+    align-self: flex-end;
+    width: auto;
   }
 }
 
