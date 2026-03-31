@@ -1001,11 +1001,14 @@
 
     const song = getMusicas().find((m) => m.id === musicaId);
     const picker = document.getElementById('add-culto-picker');
-    const cultos = getSetlists().slice().sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+    const cultos = getSetlists()
+      .filter((c) => canEditSetlist(c.id))
+      .slice()
+      .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
 
     document.getElementById('add-culto-song-name').textContent = song ? `Musica: ${song.nome}` : 'Selecione o culto';
     if (!cultos.length) {
-      picker.innerHTML = '<option value="">Nenhum culto cadastrado</option>';
+      picker.innerHTML = '<option value="">Nenhum culto seu cadastrado</option>';
     } else {
       picker.innerHTML = cultos.map((c) => `<option value="${c.id}">${escapeHtml(c.title)} (${escapeHtml(c.date || '-')})</option>`).join('');
     }
@@ -1030,6 +1033,11 @@
   }
 
   function addSongToCulto(cultoId, musicaId) {
+    if (!canEditSetlist(cultoId)) {
+      showToast('Voce nao pode editar culto de outro ministrante', 'error');
+      return false;
+    }
+
     const setlists = getSetlists();
     const setlist = setlists.find((s) => s.id === cultoId);
     if (!setlist) {

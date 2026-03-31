@@ -108,6 +108,7 @@ Status: Concluida
 Entregas:
 - Painel admin para usuarios e musicas
 - Permissoes por perfil (admin x ministrante)
+- Permissoes por dono de culto (somente criador edita/exclui/altera repertorio)
 - Auditoria de acoes criticas
 - Ferramentas de manutencao de base (merge de duplicatas)
 
@@ -118,13 +119,15 @@ Checklist de testes da fase:
 
 ## Fase 6 - Produto expandido
 
-Status: Parcialmente concluida
+Status: Concluida
 
 Entregas implementadas:
 - PWA instalavel
 - Cache offline de leitura
+- Estrategia network-first para reduzir atraso de atualizacao em deploy
 - Exportacao PDF de setlist
 - Notificacoes de lembretes de culto (browser, com aba ativa)
+- Sessao validada no banco e expiracao de sessao para evitar login fantasma
 
 Checklist de testes da fase:
 - Instalacao PWA em Android e iOS
@@ -134,9 +137,9 @@ Checklist de testes da fase:
 
 ## 4. Priorizacao sugerida (curto prazo)
 
-1. Executar Fase 2 completa
-2. Iniciar Fase 4 (setlist por culto)
-3. Consolidar Fase 3 (filtros e ordenacao)
+1. Endurecer seguranca com RLS + policies por perfil no Supabase
+2. Migrar autenticacao para Supabase Auth (remover senha em texto plano)
+3. Criar smoke tests automatizados de login/cultos/sincronizacao
 
 ## 5. Criterio de conclusao por fase
 

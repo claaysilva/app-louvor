@@ -1,6 +1,6 @@
 # App Louvor
 
-Aplicativo web para ministerio de louvor em modo local (autenticacao e dados no navegador).
+Aplicativo web para ministerio de louvor com Supabase como fonte de verdade e cache local no navegador.
 
 ## Estrutura
 
@@ -14,19 +14,19 @@ Aplicativo web para ministerio de louvor em modo local (autenticacao e dados no 
 
 ## Funcionalidades
 
-- Login e cadastro locais
-- Sessao persistida no navegador (localStorage)
+- Login e cadastro validados no Supabase
+- Sessao persistida no navegador com validacao no banco e expiracao
 - Minhas musicas: adicionar, editar, remover, buscar
 - Lista geral: buscar, detalhes, salvar/editar tom
 - Lista geral com filtro por tom, ordenacao e paginacao
 - Exportacao CSV das musicas pessoais
 - Painel rapido com estatisticas
 - Indicador online/offline
-- Painel admin local para cadastro de usuarios e visao completa
-- Setlists por culto (cadastro, edicao, associacao de musicas)
+- Painel admin para cadastro de usuarios e visao completa
+- Cultos (cadastro, edicao, associacao de musicas)
 - Alerta de repeticao recente de musica em culto
 - Exportacao de setlist para impressao/PDF
-- Historico de acoes (auditoria local)
+- Historico de acoes (auditoria sincronizada)
 - PWA com cache offline e botao de instalacao
 - Backup local em JSON (exportar/importar)
 - Reset completo dos dados locais (com confirmacao)
@@ -64,7 +64,7 @@ Tabelas/colunas criadas:
 
 ## Observacao importante
 
-Com banco configurado, os dados sao sincronizados no Supabase e mantidos no localStorage apenas como cache.
+Com banco configurado, os dados sao carregados do Supabase e mantidos no localStorage apenas como cache.
 Se service_role foi exposta no frontend, rotacione essa chave no Supabase imediatamente.
 
 ## Escopo por fases
