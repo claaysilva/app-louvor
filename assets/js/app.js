@@ -73,9 +73,36 @@
 
   function queueDbSync(task) {
     if (!DB_ENABLED || dbHydrating) return;
-    dbSyncQueue = dbSyncQueue.then(task).catch(() => {
-      showToast('Falha ao sincronizar com o banco', 'error');
+    dbSyncQueue = dbSyncQueue.then(task).catch((error) => {
+      const msg = error?.message ? `: ${String(error.message).slice(0, 140)}` : '';
+      showToast(`Falha ao sincronizar com o banco${msg}`, 'error');
     });
+  }
+
+  function mapHistoryDbToLocal(item) {
+    return {
+      id: item.id,
+      action: item.action,
+      details: item.details || null,
+      targetType: item.targetType || item.target_type || null,
+      targetId: item.targetId || item.target_id || null,
+      userId: item.userId || item.user_id || null,
+      userEmail: item.userEmail || item.user_email || '-',
+      created_at: item.created_at || new Date().toISOString()
+    };
+  }
+
+  function mapHistoryLocalToDb(item) {
+    return {
+      id: item.id,
+      action: item.action,
+      details: item.details || null,
+      target_type: item.target_type || item.targetType || null,
+      target_id: item.target_id || item.targetId || null,
+      user_id: item.user_id || item.userId || null,
+      user_email: item.user_email || item.userEmail || '-',
+      created_at: item.created_at || new Date().toISOString()
+    };
   }
 
   async function dbRequest(path, options) {
@@ -102,19 +129,63 @@
     return dbRequest(`/rest/v1/${table}?select=${query}`, { method: 'GET' });
   }
 
-  async function dbReplaceAll(table, rows) {
-    await dbRequest(`/rest/v1/${table}?id=neq.__none__`, {
+  function normalizeRowsForPostgrest(rows) {
+    if (!Array.isArray(rows) || !rows.length) return [];
+
+    const keys = new Set();
+    rows.forEach((row) => {
+      if (!row || typeof row !== 'object') return;
+      Object.keys(row).forEach((k) => keys.add(k));
+    });
+
+    const allKeys = Array.from(keys);
+    return rows.map((row) => {
+      const obj = row && typeof row === 'object' ? row : {};
+      const normalized = {};
+      allKeys.forEach((k) => {
+        const value = obj[k];
+        normalized[k] = value === undefined ? null : value;
+      });
+      return normalized;
+    });
+  }
+
+  async function dbDeleteByMissingIds(table, ids) {
+    if (!ids.length) {
+      await dbRequest(`/rest/v1/${table}?id=not.is.null`, {
+        method: 'DELETE',
+        headers: { Prefer: 'return=minimal' }
+      });
+      return;
+    }
+
+    const list = ids.join(',');
+    await dbRequest(`/rest/v1/${table}?id=not.in.(${list})`, {
       method: 'DELETE',
       headers: { Prefer: 'return=minimal' }
     });
+  }
 
-    if (!rows.length) return;
+  async function dbReplaceAll(table, rows) {
+    const normalizedRows = normalizeRowsForPostgrest(rows);
 
+    if (!normalizedRows.length) {
+      await dbDeleteByMissingIds(table, []);
+      return;
+    }
+
+    // Primeiro faz upsert; so depois remove os ausentes.
+    // Isso evita apagar toda a tabela e falhar na reinsercao.
     await dbRequest(`/rest/v1/${table}`, {
       method: 'POST',
       headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
-      body: JSON.stringify(rows)
+      body: JSON.stringify(normalizedRows)
     });
+
+    const ids = normalizedRows
+      .map((r) => r.id)
+      .filter((id) => typeof id === 'string' && id.trim());
+    await dbDeleteByMissingIds(table, ids);
   }
 
   async function hydrateFromDatabase() {
@@ -141,7 +212,7 @@
         }));
         writeJson(LS_SETLISTS, mapped);
       }
-      if (Array.isArray(auditoria)) writeJson(LS_HISTORY, auditoria);
+      if (Array.isArray(auditoria)) writeJson(LS_HISTORY, auditoria.map(mapHistoryDbToLocal));
     } finally {
       dbHydrating = false;
     }
@@ -333,7 +404,23 @@
   function setUsers(users) {
     writeJson(LS_USERS, users);
     queueDbSync(async () => {
-      await dbReplaceAll('profiles', users);
+      try {
+        await dbReplaceAll('profiles', users);
+      } catch (error) {
+        const msg = String(error?.message || '');
+        if (msg.includes('23503') && msg.includes('profiles')) {
+          // FK violada em profiles - remover ids orphaos se houver
+          const match = msg.match(/Key \(id\)=\(([0-9a-fA-F-]{36})\)/);
+          if (match) {
+            const orphanId = match[1];
+            const cleaned = users.filter((u) => u.id !== orphanId);
+            writeJson(LS_USERS, cleaned);
+            await dbReplaceAll('profiles', cleaned);
+            return;
+          }
+        }
+        throw error;
+      }
     });
   }
 
@@ -352,10 +439,68 @@
     return readJson(LS_MM, []);
   }
 
+  function sanitizeMMRows(mm) {
+    const users = getUsers();
+    const musicas = getMusicas();
+    const userIds = new Set(users.map((u) => u.id));
+    const musicaIds = new Set(musicas.map((m) => m.id));
+
+    return (Array.isArray(mm) ? mm : []).filter((row) => {
+      if (!row || !row.id) return false;
+      if (!row.ministrante_id || !row.musica_id) return false;
+      return userIds.has(row.ministrante_id) && musicaIds.has(row.musica_id);
+    });
+  }
+
+  async function sanitizeMMRowsWithDatabase(mm) {
+    const localCleaned = sanitizeMMRows(mm);
+    if (!DB_ENABLED || !localCleaned.length) return localCleaned;
+
+    try {
+      const [profiles, musicas] = await Promise.all([
+        dbSelect('profiles', 'id'),
+        dbSelect('musicas', 'id')
+      ]);
+
+      const profileIds = new Set((profiles || []).map((p) => p.id));
+      const musicaIds = new Set((musicas || []).map((m) => m.id));
+
+      return localCleaned.filter((row) => (
+        profileIds.has(row.ministrante_id) && musicaIds.has(row.musica_id)
+      ));
+    } catch {
+      return localCleaned;
+    }
+  }
+
   function setMM(mm) {
-    writeJson(LS_MM, mm);
+    const cleaned = sanitizeMMRows(mm);
+    writeJson(LS_MM, cleaned);
     queueDbSync(async () => {
-      await dbReplaceAll('ministrante_musicas', mm);
+      try {
+        const dbCleaned = await sanitizeMMRowsWithDatabase(cleaned);
+        if (dbCleaned.length !== cleaned.length) writeJson(LS_MM, dbCleaned);
+        await dbReplaceAll('ministrante_musicas', dbCleaned);
+      } catch (error) {
+        const msg = String(error?.message || '');
+        if (msg.includes('23503') && (msg.includes('ministrante_id') || msg.includes('musica_id'))) {
+          const retryBase = await sanitizeMMRowsWithDatabase(getMM());
+
+          // Remove o id orfao explicitamente indicado pelo Postgres, quando presente.
+          const match = msg.match(/Key \((ministrante_id|musica_id)\)=\(([0-9a-fA-F-]{36})\)/);
+          let retryCleaned = retryBase;
+          if (match) {
+            const field = match[1];
+            const missingId = match[2];
+            retryCleaned = retryBase.filter((row) => row[field] !== missingId);
+          }
+
+          writeJson(LS_MM, retryCleaned);
+          await dbReplaceAll('ministrante_musicas', retryCleaned);
+          return;
+        }
+        throw error;
+      }
     });
   }
 
@@ -387,7 +532,18 @@
   function setHistory(list) {
     writeJson(LS_HISTORY, list);
     queueDbSync(async () => {
-      await dbReplaceAll('auditoria', list);
+      const rows = list.map(mapHistoryLocalToDb);
+      try {
+        await dbReplaceAll('auditoria', rows);
+      } catch (error) {
+        const msg = String(error?.message || '');
+        if (msg.includes('23503') && msg.includes('user_id')) {
+          const fallback = rows.map((r) => ({ ...r, user_id: null }));
+          await dbReplaceAll('auditoria', fallback);
+          return;
+        }
+        throw error;
+      }
     });
   }
 
@@ -406,83 +562,8 @@
     setHistory(list.slice(0, 800));
   }
 
-  function ensureSeedData() {
-    const users = getUsers();
-    const hasAdmin = users.some((u) => normalize(u.email) === normalize(ADMIN_EMAIL));
-    if (!hasAdmin) {
-      users.push({
-        id: uid(),
-        nome: 'Clayton',
-        email: ADMIN_EMAIL,
-        password: ADMIN_PASSWORD,
-        role: 'admin',
-        created_at: new Date().toISOString()
-      });
-      setUsers(users);
-    }
-
-    if (!localStorage.getItem(LS_MUSICAS)) setMusicas([]);
-    if (!localStorage.getItem(LS_MM)) setMM([]);
-    if (!localStorage.getItem(LS_SETLISTS)) setSetlists([]);
-    if (!localStorage.getItem(LS_HISTORY)) setHistory([]);
-
-    const adminUser = getUsers().find((u) => normalize(u.email) === normalize(ADMIN_EMAIL));
-    if (!adminUser) return;
-
-    const sampleSongs = [
-      'Oceanos',
-      'Ninguem Explica Deus',
-      'Lugar Secreto',
-      'A Casa E Sua',
-      'Rujao',
-      'A Bencao',
-      'Santo Espirito',
-      'Me Atraiu',
-      'Yeshua',
-      'A Ele a Gloria',
-      'Quebrantado Coracao',
-      'Tu Es Bom',
-      'Pra Sempre',
-      'Tua Graca Me Basta',
-      'Deus de Promessas'
-    ];
-
-    const musicas = getMusicas();
-    const mm = getMM();
-    let changedSongs = false;
-    let changedMm = false;
-
-    sampleSongs.forEach((nome, idx) => {
-      let song = musicas.find((m) => normalize(m.nome) === normalize(nome));
-      if (!song) {
-        song = {
-          id: uid(),
-          nome,
-          link: null,
-          criado_por: adminUser.id,
-          created_at: new Date(Date.now() - (idx + 1) * 86400000).toISOString()
-        };
-        musicas.push(song);
-        changedSongs = true;
-      }
-
-      const hasAssoc = mm.some((r) => r.ministrante_id === adminUser.id && r.musica_id === song.id);
-      if (!hasAssoc) {
-        mm.push({
-          id: uid(),
-          ministrante_id: adminUser.id,
-          musica_id: song.id,
-          tom: null,
-          observacoes: null,
-          created_at: new Date(Date.now() - (idx + 1) * 86400000).toISOString()
-        });
-        changedMm = true;
-      }
-    });
-
-    if (changedSongs) setMusicas(musicas);
-    if (changedMm) setMM(mm);
-  }
+  // Removed ensureSeedData() - app is now client-only for Supabase.
+  // All data must come from database. No local seed data.
 
   function saveSession(user) {
     writeJson(LS_SESSION, { userId: user.id, at: new Date().toISOString() });
@@ -543,7 +624,7 @@
     input.type = input.type === 'password' ? 'text' : 'password';
   }
 
-  function doLogin() {
+  async function doLogin() {
     const email = document.getElementById('login-email').value.trim();
     const pass = document.getElementById('login-pass').value;
     const msg = document.getElementById('login-msg');
@@ -554,15 +635,27 @@
       return;
     }
 
+    if (!DB_ENABLED) {
+      showMsg(msg, 'Banco de dados nao configurado', 'error');
+      return;
+    }
+
     setBusy(btn, true, 'Entrar', 'Entrando');
     try {
-      const user = getUsers().find((u) => normalize(u.email) === normalize(email) && u.password === pass);
+      // Busca usuario diretamente no Supabase, nao no cache
+      const results = await dbSelect('profiles', '*');
+      const profiles = Array.isArray(results) ? results : [];
+      const user = profiles.find(
+        (u) => normalize(u.email) === normalize(email) && u.password === pass
+      );
       if (!user) throw appError('E401', 'Email ou senha invalidos');
 
       currentProfile = user;
-      currentUser = { user: { id: user.id, email: user.email }, mode: 'local' };
+      currentUser = { user: { id: user.id, email: user.email }, mode: 'supabase' };
       saveSession(user);
+      setUsers(profiles);
       enterApp();
+      logHistory('user_login', `Login realizado: ${email}`, 'user', user.id);
     } catch (error) {
       showMsg(msg, messageForError(error), 'error');
     } finally {
@@ -570,7 +663,7 @@
     }
   }
 
-  function doRegister() {
+  async function doRegister() {
     const nome = document.getElementById('reg-nome').value.trim();
     const email = document.getElementById('reg-email').value.trim();
     const pass = document.getElementById('reg-pass').value;
@@ -582,9 +675,16 @@
       return;
     }
 
+    if (!DB_ENABLED) {
+      showMsg(msg, 'Banco de dados nao configurado', 'error');
+      return;
+    }
+
     setBusy(btn, true, 'Criar conta', 'Criando');
     try {
-      const users = getUsers();
+      // Busca todos os usuarios no Supabase
+      const results = await dbSelect('profiles', '*');
+      const users = Array.isArray(results) ? results : [];
       const exists = users.some((u) => normalize(u.email) === normalize(email));
       if (exists) throw appError('E409', 'Este email ja esta cadastrado. Use Entrar.');
 
@@ -596,6 +696,12 @@
         role: 'user',
         created_at: new Date().toISOString()
       };
+
+      // Insere no Supabase primeiro
+      await dbRequest('/rest/v1/profiles', {
+        method: 'POST',
+        body: JSON.stringify(created)
+      });
 
       users.push(created);
       setUsers(users);
@@ -1486,6 +1592,12 @@
     loadAdminOverview();
   }
 
+  function canEditSetlist(setlistId) {
+    const setlist = getSetlists().find((s) => s.id === setlistId);
+    if (!setlist) return false;
+    return currentProfile && currentProfile.id === setlist.created_by;
+  }
+
   function loadSetlists() {
     const el = document.getElementById('setlist-list');
     if (!el) return;
@@ -1515,6 +1627,11 @@
             return `<div class="setlist-preview-item">${idx + 1}. ${escapeHtml(songName)}</div>`;
           })
           .join('');
+        const isOwner = canEditSetlist(s.id);
+        const editDeleteButtons = isOwner
+          ? `<button class="btn-icon" onclick="openSetlistModal('${s.id}')">Editar</button>
+              <button class="btn-icon" onclick="deleteSetlist('${s.id}')">Excluir</button>`
+          : '';
 
         return `
           <article class="setlist-card">
@@ -1523,9 +1640,8 @@
             <div class="setlist-sub">Responsavel: ${escapeHtml(ownerName)}</div>
             ${previewList ? `<div class="setlist-preview-list">${previewList}</div>` : `<div class="setlist-sub">${escapeHtml(nextSongs || 'Sem musicas')}</div>`}
             <div class="setlist-actions">
-              <button class="btn-ghost" onclick="openSetlistDetail('${s.id}')">Abrir</button>
-              <button class="btn-ghost" onclick="openSetlistModal('${s.id}')">Editar</button>
-              <button class="btn-cancel" onclick="deleteSetlist('${s.id}')">Excluir</button>
+              <button class="btn-icon" onclick="openSetlistDetail('${s.id}')">Abrir</button>
+              ${editDeleteButtons}
             </div>
           </article>
         `;
@@ -1549,6 +1665,10 @@
     } else {
       const setlist = getSetlists().find((s) => s.id === editingSetlistId);
       if (!setlist) return;
+      if (!canEditSetlist(editingSetlistId)) {
+        showToast('Voce nao pode editar culto de outro ministrante', 'error');
+        return;
+      }
       title.textContent = 'Editar culto';
       inputTitle.value = setlist.title || '';
       inputDate.value = setlist.date || '';
@@ -1606,6 +1726,10 @@
   }
 
   async function deleteSetlist(id) {
+    if (!canEditSetlist(id)) {
+      showToast('Voce nao pode excluir culto de outro ministrante', 'error');
+      return;
+    }
     const ok = await askConfirm('Excluir culto', 'Deseja realmente excluir este culto?');
     if (!ok) return;
 
@@ -1628,13 +1752,21 @@
     const setlist = getSetlists().find((s) => s.id === id);
     if (!setlist) return;
 
+    const isOwner = canEditSetlist(id);
     document.getElementById('setlist-detail-title').textContent = `${setlist.title} (${setlist.date})`;
 
     const picker = document.getElementById('setlist-song-picker');
     const songs = getMusicas().slice().sort((a, b) => String(a.nome).localeCompare(String(b.nome)));
     picker.innerHTML = songs.map((s) => `<option value="${s.id}">${escapeHtml(s.nome)}</option>`).join('');
+    picker.disabled = !isOwner;
 
-    renderSetlistSongs(setlist);
+    const modalActions = document.getElementById('modal-setlist-detail').querySelector('.modal-actions');
+    if (modalActions) {
+      const addBtn = modalActions.querySelector('[onclick="addSongToSetlist()"]');
+      if (addBtn) addBtn.style.display = isOwner ? 'block' : 'none';
+    }
+
+    renderSetlistSongs(setlist, isOwner);
     document.getElementById('modal-setlist-detail').classList.add('open');
   }
 
@@ -1642,7 +1774,7 @@
     document.getElementById('modal-setlist-detail').classList.remove('open');
   }
 
-  function renderSetlistSongs(setlist) {
+  function renderSetlistSongs(setlist, isOwner = false) {
     const el = document.getElementById('setlist-song-list');
     const songs = getMusicas();
     const items = setlist.items || [];
@@ -1657,13 +1789,14 @@
         const song = songs.find((s) => s.id === it.musica_id);
         const minister = getUsers().find((u) => u.id === (it.added_by || setlist.created_by));
         const ministerName = minister?.nome || minister?.email || 'Ministrante';
+        const removeBtn = isOwner ? `<button class="btn-icon" onclick="removeSongFromSetlist('${it.musica_id}')">Remover</button>` : '';
         return `
           <div class="setlist-song-item">
             <div class="setlist-song-main">
               <div class="setlist-song-name">${idx + 1}. ${escapeHtml(song?.nome || 'Musica removida')}</div>
               <div class="setlist-song-meta">Incluida por ${escapeHtml(ministerName)} em ${escapeHtml(formatDateTimeBR(it.added_at))}</div>
             </div>
-            <button class="btn-cancel" onclick="removeSongFromSetlist('${it.musica_id}')">Remover</button>
+            ${removeBtn}
           </div>
         `;
       })
@@ -1671,6 +1804,10 @@
   }
 
   function addSongToSetlist() {
+    if (!canEditSetlist(selectedSetlistId)) {
+      showToast('Voce nao pode adicionar musicas a culto de outro ministrante', 'error');
+      return;
+    }
     const setlists = getSetlists();
     const setlist = setlists.find((s) => s.id === selectedSetlistId);
     if (!setlist) return;
@@ -1682,6 +1819,10 @@
   }
 
   function removeSongFromSetlist(musicaId) {
+    if (!canEditSetlist(selectedSetlistId)) {
+      showToast('Voce nao pode remover musicas de culto de outro ministrante', 'error');
+      return;
+    }
     const setlists = getSetlists();
     const setlist = setlists.find((s) => s.id === selectedSetlistId);
     if (!setlist) return;
@@ -1689,7 +1830,7 @@
     setlist.items = (setlist.items || []).filter((i) => i.musica_id !== musicaId);
     setSetlists(setlists);
     logHistory('setlist_song_removed', `Removeu musica de ${setlist.title}`, 'setlist', setlist.id);
-    renderSetlistSongs(setlist);
+    renderSetlistSongs(setlist, true);
     loadSetlists();
   }
 
@@ -2033,20 +2174,19 @@
     bindBackupInput();
     bindMusicNameSuggestionHint();
 
-    if (DB_ENABLED) {
-      try {
-        await hydrateFromDatabase();
-      } catch {
-        showToast('Nao foi possivel carregar do banco. Usando cache local.', 'error');
-      }
-    }
-
-    ensureSeedData();
-    checkSession();
-
     if (!DB_ENABLED) {
-      showToast('Banco nao configurado. Defina SUPA_URL e SUPA_KEY no config.js', 'error');
+      showToast('Banco de dados nao configurado. Defina SUPA_URL e SUPA_KEY no config.js', 'error');
+      return;
     }
+
+    try {
+      await hydrateFromDatabase();
+    } catch (error) {
+      showToast('Falha ao carregar dados do banco. Verifique a conexao e as credenciais.', 'error');
+      return;
+    }
+
+    checkSession();
   }
 
   Object.assign(window, {
