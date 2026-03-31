@@ -10,6 +10,7 @@
   const LS_MM = 'louvor_ministrante_musicas';
   const LS_SETLISTS = 'louvor_setlists';
   const LS_HISTORY = 'louvor_history';
+  const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
   const DATA_KEYS = [LS_USERS, LS_SESSION, LS_MUSICAS, LS_MM, LS_SETLISTS, LS_HISTORY];
 
   const cfg = window.APP_CONFIG || {};
@@ -573,10 +574,22 @@
     localStorage.removeItem(LS_SESSION);
   }
 
-  function getSessionUser() {
+  function getSessionMeta() {
     const sess = readJson(LS_SESSION, null);
-    if (!sess?.userId) return null;
-    return getUsers().find((u) => u.id === sess.userId) || null;
+    if (!sess?.userId || !sess?.at) return null;
+
+    const createdAt = new Date(sess.at).getTime();
+    if (!Number.isFinite(createdAt)) {
+      clearSession();
+      return null;
+    }
+
+    if (Date.now() - createdAt > SESSION_TTL_MS) {
+      clearSession();
+      return null;
+    }
+
+    return sess;
   }
 
   function updateAdminState() {
@@ -2011,12 +2024,33 @@
     sync();
   }
 
-  function checkSession() {
-    const user = getSessionUser();
-    if (!user) return;
-    currentProfile = user;
-    currentUser = { user: { id: user.id, email: user.email }, mode: 'local' };
-    enterApp();
+  async function checkSession() {
+    const sess = getSessionMeta();
+    if (!sess) return;
+
+    try {
+      const userId = encodeURIComponent(sess.userId);
+      const rows = await dbRequest(`/rest/v1/profiles?id=eq.${userId}&select=*`, { method: 'GET' });
+      const user = Array.isArray(rows) && rows.length ? rows[0] : null;
+      if (!user) {
+        clearSession();
+        return;
+      }
+
+      currentProfile = user;
+      currentUser = { user: { id: user.id, email: user.email }, mode: 'supabase' };
+
+      const users = getUsers();
+      if (!users.some((u) => u.id === user.id)) {
+        users.push(user);
+        setUsers(users);
+      }
+
+      enterApp();
+    } catch {
+      // Se nao conseguir validar sessao no banco, evita login fantasma.
+      clearSession();
+    }
   }
 
   function registerPwa() {
@@ -2042,6 +2076,14 @@
         installBtn.classList.add('hidden');
       });
       installBtn.dataset.bound = '1';
+    }
+
+    if (!window.__sessionStorageBound) {
+      window.addEventListener('storage', (e) => {
+        if (e.key !== LS_SESSION || e.newValue) return;
+        if (currentProfile) doLogout();
+      });
+      window.__sessionStorageBound = true;
     }
   }
 
@@ -2186,7 +2228,7 @@
       return;
     }
 
-    checkSession();
+    await checkSession();
   }
 
   Object.assign(window, {
