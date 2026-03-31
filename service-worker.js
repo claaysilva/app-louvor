@@ -1,4 +1,4 @@
-const CACHE_NAME = 'app-louvor-v2';
+const CACHE_NAME = 'app-louvor-v3';
 const ASSETS = [
   './',
   './index.html',
